@@ -77,3 +77,25 @@ fn extract_code_from_request(request: &str) -> Option<String> {
     }
     None
 }
+
+pub async fn refresh_access_token(refresh_token: &str) -> Result<TokenResponse, Box<dyn std::error::Error>> {
+    let client_id = env::var("GOOGLE_CLIENT_ID")
+        .expect("GOOGLE_CLIENT_ID must be set in .env file");
+    let client_secret = env::var("GOOGLE_CLIENT_SECRET")
+        .expect("GOOGLE_CLIENT_SECRET must be set in .env file");
+
+    let client = reqwest::Client::new();
+    let token_response = client
+        .post("https://oauth2.googleapis.com/token")
+        .form(&[
+            ("client_id", client_id),
+            ("client_secret", client_secret),
+            ("refresh_token", refresh_token.to_string()),
+            ("grant_type", "refresh_token".to_string()),
+        ])
+        .send()
+        .await?
+        .json::<TokenResponse>()
+        .await?;
+    Ok(token_response)
+}

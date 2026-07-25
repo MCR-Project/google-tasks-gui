@@ -9,9 +9,20 @@ use std::env;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
+    let token_response = if let Ok(refresh_token) = auth::keyring::get_refresh_token() {
+        println!("Found refresh token in keyring. Refreshing access token...");
+        auth::refresh_access_token(&refresh_token).await?
+    } else {
+        println!("No refresh token found in keyring. Starting authentication process...");
+        let token_response = auth::authenticate().await?;
+        if let Some(ref refresh_token) = token_response.refresh_token {
+            auth::keyring::save_refresh_token(refresh_token)?;
+            println!("Refresh token saved to keyring.");
+        }
+        token_response
+    };
+
     // 1. Authenticate and get the access token
-    println!("Starting authentication process...");
-    let token_response = auth::authenticate().await?;
     println!("✅ Authentication successful! Access Token: {}", token_response.access_token);
 
     if let Some(ref refresh_token) = token_response.refresh_token {
