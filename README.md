@@ -58,13 +58,13 @@ While Google Tasks is widely used across mobile and web, Linux lacks a modern, h
 
 * [ ] **Local Keyring Setup:** Integrate `keyring` crate to read/write tokens safely to Linux Secret Service.
 * [ ] **OAuth 2.0 PKCE Loopback:**
-* [ ] Spin up local TCP listener on `127.0.0.1:8080`.
-* [ ] Launch system browser (`open` crate) to Google Login page.
-* [ ] Receive redirect authorization code and exchange for `access_token` & `refresh_token`.
+* [x] Spin up local TCP listener on `127.0.0.1:8080`.
+* [x] Launch system browser (`open` crate) to Google Login page.
+* [x] Receive redirect authorization code and exchange for `access_token` & `refresh_token`.
 
 
-* [ ] **Google API Client:**
-* [ ] Fetch user task lists (`GET /tasks/v1/users/@me/lists`).
+* [x] **Google API Client:**
+* [x] Fetch user task lists (`GET /tasks/v1/users/@me/lists`).
 * [ ] Fetch tasks within a list (`GET /tasks/v1/lists/{list_id}/tasks`).
 * [ ] Create a new task (`POST /tasks/v1/lists/{list_id}/tasks`).
 * [ ] Toggle task completion (`PATCH /tasks/v1/lists/{list_id}/tasks/{task_id}`).
