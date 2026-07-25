@@ -1,3 +1,5 @@
+pub mod keyring;
+
 use serde::Deserialize;
 use std::env;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

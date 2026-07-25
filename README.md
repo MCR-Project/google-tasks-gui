@@ -57,7 +57,7 @@ While Google Tasks is widely used across mobile and web, Linux lacks a modern, h
 > **Goal:** Complete a working terminal/CLI tool in Rust before touching any GUI code.
 
 * [ ] **Local Keyring Setup:** Integrate `keyring` crate to read/write tokens safely to Linux Secret Service.
-* [ ] **OAuth 2.0 PKCE Loopback:**
+* [x] **OAuth 2.0 PKCE Loopback:**
 * [x] Spin up local TCP listener on `127.0.0.1:8080`.
 * [x] Launch system browser (`open` crate) to Google Login page.
 * [x] Receive redirect authorization code and exchange for `access_token` & `refresh_token`.
