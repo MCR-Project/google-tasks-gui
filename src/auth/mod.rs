@@ -5,12 +5,37 @@ use std::env;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine;
+use rand::RngCore;
+use sha2::{Digest, Sha256};
+
 #[derive(Debug, Deserialize)]
 pub struct TokenResponse {
     pub access_token: String,
     pub expires_in: u64,
     pub refresh_token: Option<String>,
     pub token_type: String,
+}
+
+pub struct PkceChallenge {
+    pub code_verifier: String,
+    pub code_challenge: String,
+}
+
+// Encode in base 64 URL-safe format without padding
+pub fn generate_pkce() -> PkceChallenge {
+    let mut bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    let code_verifier = URL_SAFE_NO_PAD.encode(bytes);
+
+    let hash = Sha256::digest(code_verifier.as_bytes());
+    let code_challenge = URL_SAFE_NO_PAD.encode(hash);
+
+    PkceChallenge {
+        code_verifier,
+        code_challenge,
+    }
 }
 
 pub async fn authenticate() -> Result<TokenResponse, Box<dyn std::error::Error>> {
@@ -22,10 +47,13 @@ pub async fn authenticate() -> Result<TokenResponse, Box<dyn std::error::Error>>
     let redirect_uri = "http://localhost:8080/callback";
     let scope = "https://www.googleapis.com/auth/tasks";
 
-    // Construct the authorization URL
+    // Generate PKCE code_verifier and code_challenge
+    let pkce = generate_pkce();
+
+    // Construct the authorization URL with PKCE parameters
     let auth_url = format!(
-        "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri={}&response_type=code&scope={}&access_type=offline&prompt=consent",
-        client_id, redirect_uri, scope
+        "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri={}&response_type=code&scope={}&access_type=offline&prompt=consent&code_challenge={}&code_challenge_method=S256",
+        client_id, redirect_uri, scope, pkce.code_challenge
     );
 
     println!("Please open the following URL in your browser to authenticate:");
@@ -47,7 +75,7 @@ pub async fn authenticate() -> Result<TokenResponse, Box<dyn std::error::Error>>
     let http_repsonde = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<html><body><h1>Authentication successful! You can close this window.</h1></body></html>";
     socket.write_all(http_repsonde.as_bytes()).await?;
 
-    // Exchange the authorization code for an access token
+    // Exchange the authorization code for an access token using PKCE verifier
     println!("Exchanging authorization code for access token...");
     let client = reqwest::Client::new();
     let token_response = client
@@ -58,6 +86,7 @@ pub async fn authenticate() -> Result<TokenResponse, Box<dyn std::error::Error>>
             ("redirect_uri", redirect_uri.to_string()),
             ("grant_type", "authorization_code".to_string()),
             ("code", code),
+            ("code_verifier", pkce.code_verifier),
         ])
         .send()
         .await?
