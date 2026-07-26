@@ -154,16 +154,20 @@ impl App {
 
     pub fn start_edit_task(&mut self) {
         if self.active_pane == ActivePane::Tasks {
-            if let Some(task) = self.selected_task() {
+            let existing_title = self
+                .selected_task()
+                .and_then(|t| t.title.clone())
+                .unwrap_or_default();
+
+            if self.selected_task().is_some() {
                 self.input_mode = InputMode::Editing;
                 self.edit_action = EditAction::EditTitle;
-                self.input_buffer = task.title.clone().unwrap_or_default();
+                self.input_buffer = existing_title;
                 self.status_message =
                     "Edit task title and press Enter to save (Esc to cancel)...".to_string();
             }
         }
     }
-
     pub fn submit_input(&mut self) {
         if self.input_buffer.trim().is_empty() {
             self.input_mode = InputMode::Normal;
@@ -192,12 +196,12 @@ impl App {
                 }
             }
             EditAction::EditTitle => {
+                let new_title = self.input_buffer.trim().to_string();
                 if let Some(task) = self.selected_task_mut() {
-                    task.title = Some(self.input_buffer.trim().to_string());
+                    task.title = Some(new_title.clone());
                     task.updated = Some(chrono::Utc::now());
                     task.is_dirty = true; // 👈 Mark dirty for sync!
-                    self.status_message =
-                        format!("Updated task title to '{}'", self.input_buffer.trim());
+                    self.status_message = format!("Updated task title to '{}'", new_title);
                 }
             }
         }
