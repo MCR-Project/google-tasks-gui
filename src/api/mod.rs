@@ -58,13 +58,10 @@ impl GoogleTasksClient {
     }
 
     // Get the list of task lists for the authenticated user
-    pub async fn get_task_lists(&self) -> Result<Vec<TaskList>, reqwest::Error> {
+    pub async fn get_task_lists(&mut self) -> Result<Vec<TaskList>, reqwest::Error> {
         let url = "https://www.googleapis.com/tasks/v1/users/@me/lists";
         let response = self
-            .client
-            .get(url)
-            .bearer_auth(&self.access_token)
-            .send()
+            .execute_with_retry(|client, token| client.get(url).bearer_auth(token))
             .await?;
         let response = response.error_for_status()?;
 
@@ -74,7 +71,7 @@ impl GoogleTasksClient {
 
     // Get the tasks for a specific task list
     pub async fn get_tasks(
-        &self,
+        &mut self,
         list_id: &str,
         show_completed: bool,
     ) -> Result<Vec<TaskGet>, reqwest::Error> {
@@ -84,14 +81,12 @@ impl GoogleTasksClient {
         );
 
         let response = self
-            .client
-            .get(&url)
-            .bearer_auth(&self.access_token)
-            .query(&[
-                ("showCompleted", show_completed.to_string()),
-                ("showHidden", show_completed.to_string()),
-            ])
-            .send()
+            .execute_with_retry(|client, token| {
+                client.get(&url).bearer_auth(token).query(&[
+                    ("showCompleted", show_completed.to_string()),
+                    ("showHidden", show_completed.to_string()),
+                ])
+            })
             .await?;
         let response = response.error_for_status()?;
         let tasks_response: TasksResponse = response.json().await?;
@@ -99,7 +94,7 @@ impl GoogleTasksClient {
     }
 
     pub async fn create_task(
-        &self,
+        &mut self,
         list_id: &str,
         task: &TaskLocal,
     ) -> Result<TaskGet, reqwest::Error> {
@@ -115,11 +110,9 @@ impl GoogleTasksClient {
         });
 
         let response = self
-            .client
-            .post(&url)
-            .bearer_auth(&self.access_token)
-            .json(&body)
-            .send()
+            .execute_with_retry(|client, token| {
+                client.post(&url).bearer_auth(token).json(&body)
+            })
             .await?;
         let response = response.error_for_status()?;
         let created_task: TaskGet = response.json().await?;
@@ -127,7 +120,7 @@ impl GoogleTasksClient {
     }
 
     pub async fn toggle_task_completion(
-        &self,
+        &mut self,
         list_id: &str,
         task_id: &str,
         completed: bool,
@@ -138,25 +131,45 @@ impl GoogleTasksClient {
             task_id = task_id
         );
 
-        let status = if completed { // Convert bool to value understood by Google Tasks API
+        let status = if completed {
+            // Convert bool to value understood by Google Tasks API
             "completed"
         } else {
             "needsAction"
-        }; 
+        };
         let body = serde_json::json!({ // Serde json allow to write json inside rust code
             "status": status, // We say that status = status of the new task
         });
 
         let response = self
-            .client
-            .patch(&url)
-            .bearer_auth(&self.access_token)
-            .json(&body)
-            .send()
+            .execute_with_retry(|client, token| {
+                client.patch(&url).bearer_auth(token).json(&body)
+            })
             .await?;
         let response = response.error_for_status()?;
         let toggled_task: TaskGet = response.json().await?;
         Ok(toggled_task)
+    }
+
+    async fn execute_with_retry(
+        &mut self,
+        build_request: impl Fn(&reqwest::Client, &str) -> reqwest::RequestBuilder,
+    ) -> Result<reqwest::Response, reqwest::Error> {
+        let request = build_request(&self.client, &self.access_token);
+        let response = request.send().await?;
+
+        //if error codde 401
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            if let Ok(refresh_token) = crate::auth::keyring::get_refresh_token() {
+                if let Ok(token_response) = crate::auth::refresh_access_token(&refresh_token).await {
+                    self.access_token = token_response.access_token;
+
+                    let retry_token = build_request(&self.client, &self.access_token);
+                    return retry_token.send().await;
+                }
+            }
+        }
+        Ok(response)
     }
 }
 

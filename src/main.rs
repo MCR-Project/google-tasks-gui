@@ -13,18 +13,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("🚀 Starting gTasks Headless Test Runner...\n");
 
     // Step 1: Authenticate and obtain API Client
-    let client = obtain_authenticated_client().await?;
+    let mut client = obtain_authenticated_client().await?;
 
     // Step 2: Initialize local SQLite Database
     let mut db = Database::new("task_lists.db")?;
 
     // Step 3: Synchronize remote Google Tasks data into SQLite
     println!("🔄 Syncing data from Google Tasks API...");
-    sync_remote_to_db(&client, &mut db).await?;
+    sync_remote_to_db(&mut client, &mut db).await?;
 
     // Step 4: Run API feature tests (create task & toggle completion)
     println!("\n🧪 Running API feature tests...");
-    if let Err(err) = run_feature_tests(&client, &mut db).await {
+    if let Err(err) = run_feature_tests(&mut client, &mut db).await {
         eprintln!("⚠️ Feature tests warning: {}", err);
     }
 
@@ -61,7 +61,7 @@ async fn obtain_authenticated_client() -> Result<GoogleTasksClient, Box<dyn Erro
 
 /// Fetches task lists and tasks from Google API and caches them into SQLite.
 async fn sync_remote_to_db(
-    client: &GoogleTasksClient,
+    client: &mut GoogleTasksClient,
     db: &mut Database,
 ) -> Result<(), Box<dyn Error>> {
     let lists = client.get_task_lists().await?;
@@ -89,7 +89,7 @@ async fn sync_remote_to_db(
 
 /// Test runner for API actions: Task Creation and Task Completion Toggle.
 async fn run_feature_tests(
-    client: &GoogleTasksClient,
+    client: &mut GoogleTasksClient,
     db: &mut Database,
 ) -> Result<(), Box<dyn Error>> {
     let lists = db.get_task_lists()?;
