@@ -59,6 +59,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             list_id
                         );
 
+                        let mut local_tasks: Vec<api::TaskLocal> = Vec::new();
+
                         // 2. Loop variable is named raw_task
                         for raw_task in raw_tasks {
                             // Convert raw TaskGet into clean TaskLocal
@@ -69,16 +71,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                             println!("   {} [{}] {}", icon, task.id, title);
 
-                            if let Some(ref notes) = task.notes {
-                                println!("      📝 Notes: {}", notes);
-                            }
-                            if let Some(ref due_date) = task.due {
-                                println!("      📅 Due: {}", due_date.format("%Y-%m-%d %H:%M"));
-                            }
+                            local_tasks.push(task);
                         }
 
-                        // Commented out until we implement db.save_tasks in the next step
-                        // db.save_tasks(&tasks)?;
+                        db.save_tasks(&local_tasks)?;
+                        println!(
+                            "💾 Saved {} Task(s) for List ID '{}' to the database.",
+                            local_tasks.len(),
+                            list_id
+                        );
                     }
                     Err(err) => eprintln!("❌ Error fetching tasks for list {}: {}", list_id, err),
                 }
