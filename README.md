@@ -71,7 +71,7 @@ While Google Tasks is widely used across mobile and web, Linux lacks a modern, h
 * [x] Create a new task (`POST /tasks/v1/lists/{list_id}/tasks`).
 * [x] Toggle task completion (`PATCH /tasks/v1/lists/{list_id}/tasks/{task_id}`).
 * [x] Delete a task (`DELETE /tasks/v1/lists/{list_id}/tasks/{task_id}`).
-* [ ] Update tasks
+* [x] Update tasks
 
 * [x] **Local SQLite Schema:**
 * [x] Create `task_lists` table (`id`, `title`, `updated_at`, `synced`).

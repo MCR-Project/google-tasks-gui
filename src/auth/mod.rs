@@ -23,7 +23,7 @@ pub struct PkceChallenge {
     pub code_challenge: String,
 }
 
-// Encode in base 64 URL-safe format without padding
+// Encode in sha256 URL-safe format without padding
 pub fn generate_pkce() -> PkceChallenge {
     let mut bytes = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut bytes);
