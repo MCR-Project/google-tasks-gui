@@ -1,7 +1,6 @@
 use crate::api::{TaskList, TaskLocal};
 use chrono::{DateTime, Utc};
-use reqwest::get;
-use rusqlite::{Connection, Result, Row, params};
+use rusqlite::{Connection, Result, params};
 
 pub struct Database {
     conn: Connection,

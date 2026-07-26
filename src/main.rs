@@ -4,7 +4,6 @@ mod db;
 
 use api::{GoogleTasksClient, TaskLocal};
 use db::Database;
-use sha2::digest::consts::True;
 use std::error::Error;
 
 #[tokio::main]
