@@ -128,9 +128,30 @@ async fn run_feature_tests(
     println!(
         "  ✅ [TOGGLE] Task ID: '{}' status updated to: {}",
         toggled_task.id,
-        if toggled_task.is_completed { "Completed ✅" } else { "Pending 🔲" }
+        if toggled_task.is_completed {
+            "Completed ✅"
+        } else {
+            "Pending 🔲"
+        }
     );
     db.save_tasks(&[toggled_task])?;
+
+    let delete_result = client.delete_task(&first_list.id, &created_task.id).await;
+    match delete_result {
+        Ok(_) => {
+            println!(
+                "  ✅ [DELETE] Successfully deleted task ID: '{}'",
+                created_task.id
+            );
+            db.delete_tasks_db(&[created_task.id])?;
+        }
+        Err(err) => {
+            eprintln!(
+                "⚠️ [DELETE] Failed to delete task ID: '{}'. Error: {}",
+                created_task.id, err
+            );
+        }
+    }
 
     Ok(())
 }

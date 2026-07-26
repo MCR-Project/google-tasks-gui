@@ -161,4 +161,15 @@ impl Database {
         tx.commit()?;
         Ok(())
     }
+
+    pub fn delete_tasks_db(&mut self, task_ids: &[String]) -> Result<()> {
+        let tx = self.conn.transaction()?;
+
+        for task_id in task_ids {
+            tx.execute("DELETE FROM tasks WHERE id = ?1", params![task_id])?;
+        }
+
+        tx.commit()?;
+        Ok(())
+    }
 }

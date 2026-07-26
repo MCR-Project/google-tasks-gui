@@ -171,6 +171,20 @@ impl GoogleTasksClient {
         }
         Ok(response)
     }
+
+    pub async fn delete_task(&mut self, list_id: &str, task_id: &str) -> Result<(), reqwest::Error> {
+        let url = format!(
+            "https://www.googleapis.com/tasks/v1/lists/{list_id}/tasks/{task_id}",
+            list_id = list_id,
+            task_id = task_id
+        );
+
+        let response = self
+            .execute_with_retry(|client, token| client.delete(&url).bearer_auth(token))
+            .await?;
+        response.error_for_status()?;
+        Ok(())
+    }
 }
 
 impl TaskLocal {

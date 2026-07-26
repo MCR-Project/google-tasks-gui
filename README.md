@@ -69,8 +69,9 @@ While Google Tasks is widely used across mobile and web, Linux lacks a modern, h
 * [x] Fetch tasks within a list (`GET /tasks/v1/lists/{list_id}/tasks`).
 * [x] Save users tasks within a list in the sqlite database
 * [x] Create a new task (`POST /tasks/v1/lists/{list_id}/tasks`).
-* [ ] Toggle task completion (`PATCH /tasks/v1/lists/{list_id}/tasks/{task_id}`).
-
+* [x] Toggle task completion (`PATCH /tasks/v1/lists/{list_id}/tasks/{task_id}`).
+* [x] Delete a task (`DELETE /tasks/v1/lists/{list_id}/tasks/{task_id}`).
+* [ ] Update tasks
 
 * [x] **Local SQLite Schema:**
 * [x] Create `task_lists` table (`id`, `title`, `updated_at`, `synced`).
@@ -99,7 +100,7 @@ While Google Tasks is widely used across mobile and web, Linux lacks a modern, h
 * [ ] **Offline Queueing:** Mark tasks modified offline with a `dirty` flag in SQLite.
 * [ ] **Background Sync Worker:** Tokio task running every 5 minutes (or on manual trigger) to push `dirty` tasks and fetch server updates.
 * [ ] **Conflict Resolution:** Simple "Last Write Wins" timestamp comparison strategy.
-* [ ] **Auto-Refresh Tokens:** Silent token refresh using saved `refresh_token` when HTTP 401 occurs.
+* [x] **Auto-Refresh Tokens:** Silent token refresh using saved `refresh_token` when HTTP 401 occurs.
 
 ---
 
