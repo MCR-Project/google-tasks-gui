@@ -3,7 +3,6 @@ mod auth;
 mod db;
 
 use api::GoogleTasksClient;
-use std::env;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -49,7 +48,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             for list in &lists {
                 let list_id = &list.id;
-
+                let new_task = api::TaskLocal {
+                    id: String::new(),
+                    list_id: list_id.to_string(),
+                    title: Some("New Task Title".to_string()),
+                    is_completed: false,
+                    notes: Some("This is a new task.".to_string()),
+                    due: None,
+                    completed: None,
+                    parent: None,
+                    updated: None,
+                };
                 // 1. Notice Ok(raw_tasks) without type annotation
                 match client.get_tasks(list_id, true).await {
                     Ok(raw_tasks) => {
@@ -82,6 +91,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         );
                     }
                     Err(err) => eprintln!("❌ Error fetching tasks for list {}: {}", list_id, err),
+                }
+
+                match client.create_task(&list_id, &new_task).await {
+                    Ok(created_raw_task) => {
+                        let created_task =
+                            api::TaskLocal::from_task_get(created_raw_task, list_id.to_string());
+                        println!(
+                            "\n✅ Successfully created task with ID: {} and Title: {}",
+                            created_task.id,
+                            created_task.title.as_deref().unwrap_or("(No Title)")
+                        );
+                        db.save_tasks(&[created_task])?;
+                    }
+                    Err(err) => eprintln!("❌ Error creating task: {}", err),
                 }
             }
         }

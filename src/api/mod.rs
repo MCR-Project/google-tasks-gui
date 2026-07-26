@@ -1,7 +1,5 @@
-use std::fmt::format;
-
 use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc, Local};
+use chrono::{DateTime, Utc};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TaskList {
@@ -90,6 +88,27 @@ impl GoogleTasksClient {
         let response = response.error_for_status()?;
         let tasks_response: TasksResponse = response.json().await?;
         Ok(tasks_response.items.unwrap_or_default()) 
+    }
+
+    pub async fn create_task(&self, list_id: &str, task: &TaskLocal) -> Result<TaskGet, reqwest::Error> {
+        let url = format!("https://www.googleapis.com/tasks/v1/lists/{}/tasks", list_id);
+        let body = serde_json::json!({
+            "title": task.title,
+            "notes": task.notes,
+            "due": task.due.map(|d| d.to_rfc3339()),
+            "parent": task.parent,
+        });
+
+        let response = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.access_token)
+            .json(&body)
+            .send()
+            .await?;
+        let response = response.error_for_status()?;
+        let created_task: TaskGet = response.json().await?;
+        Ok(created_task)
     }
 
 }
