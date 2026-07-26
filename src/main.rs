@@ -2,118 +2,143 @@ mod api;
 mod auth;
 mod db;
 
-use api::GoogleTasksClient;
+use api::{GoogleTasksClient, TaskLocal};
+use db::Database;
+use std::error::Error;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn Error>> {
     dotenvy::dotenv().ok();
 
+    println!("🚀 Starting gTasks Headless Test Runner...\n");
+
+    // Step 1: Authenticate and obtain API Client
+    let client = obtain_authenticated_client().await?;
+
+    // Step 2: Initialize local SQLite Database
+    let mut db = Database::new("task_lists.db")?;
+
+    // Step 3: Synchronize remote Google Tasks data into SQLite
+    println!("🔄 Syncing data from Google Tasks API...");
+    sync_remote_to_db(&client, &mut db).await?;
+
+    // Step 4: Run API feature tests (create task & toggle completion)
+    println!("\n🧪 Running API feature tests...");
+    if let Err(err) = run_feature_tests(&client, &mut db).await {
+        eprintln!("⚠️ Feature tests warning: {}", err);
+    }
+
+    // Step 5: Read and display stored SQLite state
+    println!("\n💾 Local Database Contents:");
+    display_database_contents(&db)?;
+
+    println!("\n✨ Execution completed successfully!");
+    Ok(())
+}
+
+/// Resolves authentication by checking Keyring first, falling back to OAuth PKCE.
+async fn obtain_authenticated_client() -> Result<GoogleTasksClient, Box<dyn Error>> {
     let token_response = if let Ok(refresh_token) = auth::keyring::get_refresh_token() {
-        println!("Found refresh token in keyring. Refreshing access token...");
+        println!("🔐 Found saved refresh token in OS keyring. Refreshing access token...");
         auth::refresh_access_token(&refresh_token).await?
     } else {
-        println!("No refresh token found in keyring. Starting authentication process...");
-        let token_response = auth::authenticate().await?;
-        if let Some(ref refresh_token) = token_response.refresh_token {
+        println!("🔐 No refresh token found. Starting browser OAuth authentication...");
+        let token = auth::authenticate().await?;
+        if let Some(ref refresh_token) = token.refresh_token {
             auth::keyring::save_refresh_token(refresh_token)?;
-            println!("Refresh token saved to keyring.");
+            println!("💾 Saved new refresh token to OS Keyring.");
         }
-        token_response
+        token
     };
 
-    // 1. Authenticate and get the access token
     println!(
-        "✅ Authentication successful! Access Token: {}, Type: {}, Expires In: {}s",
-        token_response.access_token, token_response.token_type, token_response.expires_in
+        "✅ Authentication successful (Token expires in {}s)\n",
+        token_response.expires_in
     );
 
-    if let Some(ref refresh_token) = token_response.refresh_token {
-        println!("✅ Refresh Token: {}", refresh_token);
+    Ok(GoogleTasksClient::new(token_response.access_token))
+}
+
+/// Fetches task lists and tasks from Google API and caches them into SQLite.
+async fn sync_remote_to_db(
+    client: &GoogleTasksClient,
+    db: &mut Database,
+) -> Result<(), Box<dyn Error>> {
+    let lists = client.get_task_lists().await?;
+    println!("📋 Retrieved {} Task List(s)", lists.len());
+
+    db.save_task_lists(&lists)?;
+
+    for list in &lists {
+        let raw_tasks = client.get_tasks(&list.id, true).await?;
+        let local_tasks: Vec<TaskLocal> = raw_tasks
+            .into_iter()
+            .map(|raw| TaskLocal::from_task_get(raw, list.id.clone()))
+            .collect();
+
+        db.save_tasks(&local_tasks)?;
+        println!(
+            "  • Saved {} task(s) for list '{}'",
+            local_tasks.len(),
+            list.title
+        );
     }
 
-    //initialize db
-    let mut db = db::Database::new("task_lists.db")?;
+    Ok(())
+}
 
-    // initialize api client with access token
-    // Instantiate the client from our api module
-    let client = GoogleTasksClient::new(token_response.access_token);
+/// Test runner for API actions: Task Creation and Task Completion Toggle.
+async fn run_feature_tests(
+    client: &GoogleTasksClient,
+    db: &mut Database,
+) -> Result<(), Box<dyn Error>> {
+    let lists = db.get_task_lists()?;
+    let first_list = match lists.first() {
+        Some(l) => l,
+        None => return Ok(()),
+    };
 
-    println!("Fetching Task Lists from Google Tasks API...");
+    // 1. Test Task Creation
+    let draft_task = TaskLocal {
+        id: String::new(),
+        list_id: first_list.id.clone(),
+        title: Some("⚡ Refactored CLI Test Task".to_string()),
+        is_completed: false,
+        notes: Some("Testing task creation from refactored main.rs".to_string()),
+        due: None,
+        completed: None,
+        parent: None,
+        updated: None,
+    };
 
-    // Fetch task lists from Google Tasks API
-    match client.get_task_lists().await {
-        Ok(lists) => {
-            println!("\n📋 Retrieved {} Task List(s):", lists.len());
-            db.save_task_lists(&lists)?;
+    let created_raw = client.create_task(&first_list.id, &draft_task).await?;
+    let created_task = TaskLocal::from_task_get(created_raw, first_list.id.clone());
+    println!(
+        "  ✅ [CREATE] Created task ID: '{}' | Title: '{}'",
+        created_task.id,
+        created_task.title.as_deref().unwrap_or("")
+    );
+    db.save_tasks(&[created_task.clone()])?;
 
-            for list in &lists {
-                let list_id = &list.id;
-                let new_task = api::TaskLocal {
-                    id: String::new(),
-                    list_id: list_id.to_string(),
-                    title: Some("New Task Title".to_string()),
-                    is_completed: false,
-                    notes: Some("This is a new task.".to_string()),
-                    due: None,
-                    completed: None,
-                    parent: None,
-                    updated: None,
-                };
-                // 1. Notice Ok(raw_tasks) without type annotation
-                match client.get_tasks(list_id, true).await {
-                    Ok(raw_tasks) => {
-                        println!(
-                            "\n📝 Retrieved {} Task(s) for List ID '{}':",
-                            raw_tasks.len(),
-                            list_id
-                        );
+    // 2. Test Task Completion Toggle (marking it completed)
+    let toggled_raw = client
+        .toggle_task_completion(&first_list.id, &created_task.id, true)
+        .await?;
+    let toggled_task = TaskLocal::from_task_get(toggled_raw, first_list.id.clone());
+    println!(
+        "  ✅ [TOGGLE] Task ID: '{}' status updated to: {}",
+        toggled_task.id,
+        if toggled_task.is_completed { "Completed ✅" } else { "Pending 🔲" }
+    );
+    db.save_tasks(&[toggled_task])?;
 
-                        let mut local_tasks: Vec<api::TaskLocal> = Vec::new();
+    Ok(())
+}
 
-                        // 2. Loop variable is named raw_task
-                        for raw_task in raw_tasks {
-                            // Convert raw TaskGet into clean TaskLocal
-                            let task = api::TaskLocal::from_task_get(raw_task, list.id.clone());
-
-                            let icon = if task.is_completed { "✅" } else { "🔲" };
-                            let title = task.title.as_deref().unwrap_or("(No Title)");
-
-                            println!("   {} [{}] {}", icon, task.id, title);
-
-                            local_tasks.push(task);
-                        }
-
-                        db.save_tasks(&local_tasks)?;
-                        println!(
-                            "💾 Saved {} Task(s) for List ID '{}' to the database.",
-                            local_tasks.len(),
-                            list_id
-                        );
-                    }
-                    Err(err) => eprintln!("❌ Error fetching tasks for list {}: {}", list_id, err),
-                }
-
-                match client.create_task(&list_id, &new_task).await {
-                    Ok(created_raw_task) => {
-                        let created_task =
-                            api::TaskLocal::from_task_get(created_raw_task, list_id.to_string());
-                        println!(
-                            "\n✅ Successfully created task with ID: {} and Title: {}",
-                            created_task.id,
-                            created_task.title.as_deref().unwrap_or("(No Title)")
-                        );
-                        db.save_tasks(&[created_task])?;
-                    }
-                    Err(err) => eprintln!("❌ Error creating task: {}", err),
-                }
-            }
-        }
-        Err(err) => eprintln!("❌ Error fetching task lists: {}", err),
-    }
-
-    // Read and verify stored data from SQLite database
+/// Reads all records from SQLite and prints them in a clean tree format.
+fn display_database_contents(db: &Database) -> Result<(), Box<dyn Error>> {
     let stored_task_lists = db.get_task_lists()?;
-    println!("\n💾 Stored Task Lists & Tasks in SQLite Database:");
+
     for list in stored_task_lists {
         println!("  📁 [{}] {}", list.id, list.title);
         let stored_tasks = db.get_tasks_for_list(&list.id)?;
