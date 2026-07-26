@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TaskList {
@@ -13,31 +13,29 @@ pub struct TaskList {
 pub struct TaskListsResponse {
     pub items: Option<Vec<TaskList>>,
 }
-#[derive (Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TaskGet {
     pub id: String,
     pub title: Option<String>,
-    pub status: Option<String>, // Task done or not 
-    pub notes: Option<String>, // description of the task
-    pub due: Option<String>, // Deadline 
+    pub status: Option<String>,    // Task done or not
+    pub notes: Option<String>,     // description of the task
+    pub due: Option<String>,       // Deadline
     pub completed: Option<String>, // Completion date of the task
-    pub parent: Option<String>, // Parent task ID (in case of subtask)
-    pub updated: Option<String>, // Last modification date
+    pub parent: Option<String>,    // Parent task ID (in case of subtask)
+    pub updated: Option<String>,   // Last modification date
 }
-
-
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TaskLocal {
     pub id: String,
     pub list_id: String,
     pub title: Option<String>,
-    pub is_completed: bool, // Task done or not 
-    pub notes: Option<String>, // description of the task
-    pub due: Option<chrono::DateTime<chrono::Utc>>, // Deadline 
+    pub is_completed: bool,                               // Task done or not
+    pub notes: Option<String>,                            // description of the task
+    pub due: Option<chrono::DateTime<chrono::Utc>>,       // Deadline
     pub completed: Option<chrono::DateTime<chrono::Utc>>, // Completion date of the task
-    pub parent: Option<String>, // Parent task ID (in case of subtask)
-    pub updated: Option<chrono::DateTime<chrono::Utc>>, // Last modification date
+    pub parent: Option<String>,                           // Parent task ID (in case of subtask)
+    pub updated: Option<chrono::DateTime<chrono::Utc>>,   // Last modification date
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -75,23 +73,40 @@ impl GoogleTasksClient {
     }
 
     // Get the tasks for a specific task list
-    pub async fn get_tasks (&self, list_id: &str, show_completed: bool) -> Result<Vec<TaskGet>, reqwest::Error> {
-        let url = format!("https://www.googleapis.com/tasks/v1/lists/{}/tasks",list_id);
+    pub async fn get_tasks(
+        &self,
+        list_id: &str,
+        show_completed: bool,
+    ) -> Result<Vec<TaskGet>, reqwest::Error> {
+        let url = format!(
+            "https://www.googleapis.com/tasks/v1/lists/{}/tasks",
+            list_id
+        );
 
         let response = self
-                                .client
-                                .get(&url)
-                                .bearer_auth(&self.access_token)
-                                .query(&[("showCompleted", show_completed.to_string()), ("showHidden", show_completed.to_string())])
-                                .send()
-                                .await?;
+            .client
+            .get(&url)
+            .bearer_auth(&self.access_token)
+            .query(&[
+                ("showCompleted", show_completed.to_string()),
+                ("showHidden", show_completed.to_string()),
+            ])
+            .send()
+            .await?;
         let response = response.error_for_status()?;
         let tasks_response: TasksResponse = response.json().await?;
-        Ok(tasks_response.items.unwrap_or_default()) 
+        Ok(tasks_response.items.unwrap_or_default())
     }
 
-    pub async fn create_task(&self, list_id: &str, task: &TaskLocal) -> Result<TaskGet, reqwest::Error> {
-        let url = format!("https://www.googleapis.com/tasks/v1/lists/{}/tasks", list_id);
+    pub async fn create_task(
+        &self,
+        list_id: &str,
+        task: &TaskLocal,
+    ) -> Result<TaskGet, reqwest::Error> {
+        let url = format!(
+            "https://www.googleapis.com/tasks/v1/lists/{}/tasks",
+            list_id
+        );
         let body = serde_json::json!({
             "title": task.title,
             "notes": task.notes,
@@ -111,6 +126,38 @@ impl GoogleTasksClient {
         Ok(created_task)
     }
 
+    pub async fn toggle_task_completion(
+        &self,
+        list_id: &str,
+        task_id: &str,
+        completed: bool,
+    ) -> Result<TaskGet, reqwest::Error> {
+        let url = format!(
+            "https://www.googleapis.com/tasks/v1/lists/{list_id}/tasks/{task_id}",
+            list_id = list_id,
+            task_id = task_id
+        );
+
+        let status = if completed { // Convert bool to value understood by Google Tasks API
+            "completed"
+        } else {
+            "needsAction"
+        }; 
+        let body = serde_json::json!({ // Serde json allow to write json inside rust code
+            "status": status, // We say that status = status of the new task
+        });
+
+        let response = self
+            .client
+            .patch(&url)
+            .bearer_auth(&self.access_token)
+            .json(&body)
+            .send()
+            .await?;
+        let response = response.error_for_status()?;
+        let toggled_task: TaskGet = response.json().await?;
+        Ok(toggled_task)
+    }
 }
 
 impl TaskLocal {
@@ -144,5 +191,16 @@ impl TaskLocal {
             parent: task_get.parent,
             updated,
         }
+    }
+
+    pub fn toggle_task_completion(&self) -> TaskLocal {
+        let mut updated_task = self.clone();
+        updated_task.is_completed = !self.is_completed;
+        if updated_task.is_completed {
+            updated_task.completed = Some(Utc::now());
+        } else {
+            updated_task.completed = None;
+        }
+        updated_task
     }
 }

@@ -68,13 +68,13 @@ While Google Tasks is widely used across mobile and web, Linux lacks a modern, h
 * [x] Save user task lists in a sqlite database
 * [x] Fetch tasks within a list (`GET /tasks/v1/lists/{list_id}/tasks`).
 * [x] Save users tasks within a list in the sqlite database
-* [ ] Create a new task (`POST /tasks/v1/lists/{list_id}/tasks`).
+* [x] Create a new task (`POST /tasks/v1/lists/{list_id}/tasks`).
 * [ ] Toggle task completion (`PATCH /tasks/v1/lists/{list_id}/tasks/{task_id}`).
 
 
-* [ ] **Local SQLite Schema:**
-* [ ] Create `task_lists` table (`id`, `title`, `updated_at`, `synced`).
-* [ ] Create `tasks` table (`id`, `list_id`, `title`, `notes`, `due_date`, `status`, `dirty_bit`).
+* [x] **Local SQLite Schema:**
+* [x] Create `task_lists` table (`id`, `title`, `updated_at`, `synced`).
+* [x] Create `tasks` table (`id`, `list_id`, `title`, `notes`, `due_date`, `status`, `dirty_bit`).
 
 
 
