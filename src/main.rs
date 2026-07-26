@@ -1,6 +1,7 @@
 mod api;
 mod auth;
 mod db;
+mod ui;
 
 use api::{GoogleTasksClient, TaskLocal};
 use db::Database;
