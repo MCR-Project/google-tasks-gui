@@ -62,7 +62,6 @@ While Google Tasks is widely used across mobile and web, Linux lacks a modern, h
 * [x] Launch system browser (`open` crate) to Google Login page.
 * [x] Receive redirect authorization code and exchange for `access_token` & `refresh_token`.
 
-
 * [x] **Google API Client:**
 * [x] Fetch user task lists (`GET /tasks/v1/users/@me/lists`).
 * [x] Save user task lists in a sqlite database
@@ -77,13 +76,23 @@ While Google Tasks is widely used across mobile and web, Linux lacks a modern, h
 * [x] Create `task_lists` table (`id`, `title`, `updated_at`, `synced`).
 * [x] Create `tasks` table (`id`, `list_id`, `title`, `notes`, `due_date`, `status`, `dirty_bit`).
 
+---
 
+### Phase 2A: Terminal User Interface (TUI) *(Next Milestone)*
+
+> **Goal:** Build a fast, keyboard-driven terminal dashboard using `ratatui` + `crossterm`.
+
+* [ ] **TUI Application Loop:** Set up `crossterm` raw mode, terminal event loop, and state management.
+* [ ] **Sidebar Navigation:** Render Google Task Lists in a navigable sidebar widget.
+* [ ] **Task View Grid:** Display tasks, due dates, and completion status checkboxes (`[ ]` / `[x]`).
+* [ ] **Interactive Actions:** Keybindings for `Space` (Toggle Task), `n` (New Task), `d` (Delete Task), `r` (Manual Sync).
+* [ ] **Status Bar:** Real-time sync status and helper keybindings footer.
 
 ---
 
-### Phase 2: GUI Frontend & State Management
+### Phase 2B: Desktop GUI Application
 
-> **Goal:** Connect the Rust backend logic to a modern desktop window.
+> **Goal:** Connect the Rust backend engine to a native desktop window (GTK4 / Tauri 2.0).
 
 * [ ] **Window Shell Setup:** Initialize application layout with GTK4 / Libadwaita styling.
 * [ ] **Task List Sidebar:** Render task lists dynamically from the local SQLite cache.
