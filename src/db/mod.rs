@@ -150,7 +150,7 @@ impl Database {
                     completed = excluded.completed, 
                     parent = excluded.parent, 
                     updated = excluded.updated,
-                    dirty = excluded.dirty,
+                    dirty = excluded.dirty
                 WHERE excluded.updated >= tasks.updated OR tasks.dirty = 0",
 
                 params![
