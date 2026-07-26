@@ -65,7 +65,7 @@ While Google Tasks is widely used across mobile and web, Linux lacks a modern, h
 
 * [x] **Google API Client:**
 * [x] Fetch user task lists (`GET /tasks/v1/users/@me/lists`).
-* [ ] Fetch tasks within a list (`GET /tasks/v1/lists/{list_id}/tasks`).
+* [x] Fetch tasks within a list (`GET /tasks/v1/lists/{list_id}/tasks`).
 * [ ] Create a new task (`POST /tasks/v1/lists/{list_id}/tasks`).
 * [ ] Toggle task completion (`PATCH /tasks/v1/lists/{list_id}/tasks/{task_id}`).
 

@@ -1,8 +1,8 @@
+mod api;
 mod auth;
 mod db;
-mod api;
 
-use api::{GoogleTasksClient};
+use api::GoogleTasksClient;
 use std::env;
 
 #[tokio::main]
@@ -23,12 +23,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // 1. Authenticate and get the access token
-    println!("✅ Authentication successful! Access Token: {}", token_response.access_token);
+    println!(
+        "✅ Authentication successful! Access Token: {}",
+        token_response.access_token
+    );
 
     if let Some(ref refresh_token) = token_response.refresh_token {
         println!("✅ Refresh Token: {}", refresh_token);
     }
-    
+
     //initialize db
     let mut db = db::Database::new("task_lists.db")?;
 
@@ -42,18 +45,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match client.get_task_lists().await {
         Ok(lists) => {
             println!("\n📋 Retrieved {} Task List(s):", lists.len());
-            for list in &lists {
-                println!("  • [{}] {}", list.id, list.title);
-                let status_icon = if list.updated.is_some() { "✅" } else { "⚠️" };
-                println!("    Updated: {} {}", status_icon, list.updated.as_deref().unwrap_or("N/A"));
-                
-            }
-            // Save the fetched task lists to the database
             db.save_task_lists(&lists)?;
+
+            for list in &lists {
+                let list_id = &list.id;
+
+                // 1. Notice Ok(raw_tasks) without type annotation
+                match client.get_tasks(list_id, true).await {
+                    Ok(raw_tasks) => {
+                        println!(
+                            "\n📝 Retrieved {} Task(s) for List ID '{}':",
+                            raw_tasks.len(),
+                            list_id
+                        );
+
+                        // 2. Loop variable is named raw_task
+                        for raw_task in raw_tasks {
+                            // Convert raw TaskGet into clean TaskLocal
+                            let task = api::TaskLocal::from_task_get(raw_task, list.id.clone());
+
+                            let icon = if task.is_completed { "✅" } else { "🔲" };
+                            let title = task.title.as_deref().unwrap_or("(No Title)");
+
+                            println!("   {} [{}] {}", icon, task.id, title);
+
+                            if let Some(ref notes) = task.notes {
+                                println!("      📝 Notes: {}", notes);
+                            }
+                            if let Some(ref due_date) = task.due {
+                                println!("      📅 Due: {}", due_date.format("%Y-%m-%d %H:%M"));
+                            }
+                        }
+
+                        // Commented out until we implement db.save_tasks in the next step
+                        // db.save_tasks(&tasks)?;
+                    }
+                    Err(err) => eprintln!("❌ Error fetching tasks for list {}: {}", list_id, err),
+                }
+            }
         }
         Err(err) => eprintln!("❌ Error fetching task lists: {}", err),
     }
-
 
     // Store in db
     let stored_task_lists = db.get_task_lists()?;
@@ -61,7 +93,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for list in stored_task_lists {
         println!("  • [{}] {}", list.id, list.title);
     }
-    
 
     Ok(())
 }
