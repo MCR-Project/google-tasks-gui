@@ -23,8 +23,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 1. Authenticate and get the access token
     println!(
-        "✅ Authentication successful! Access Token: {}",
-        token_response.access_token
+        "✅ Authentication successful! Access Token: {}, Type: {}, Expires In: {}s",
+        token_response.access_token, token_response.token_type, token_response.expires_in
     );
 
     if let Some(ref refresh_token) = token_response.refresh_token {
@@ -111,11 +111,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(err) => eprintln!("❌ Error fetching task lists: {}", err),
     }
 
-    // Store in db
+    // Read and verify stored data from SQLite database
     let stored_task_lists = db.get_task_lists()?;
-    println!("\n💾 Stored Task Lists in Database:");
+    println!("\n💾 Stored Task Lists & Tasks in SQLite Database:");
     for list in stored_task_lists {
-        println!("  • [{}] {}", list.id, list.title);
+        println!("  📁 [{}] {}", list.id, list.title);
+        let stored_tasks = db.get_tasks_for_list(&list.id)?;
+        for task in stored_tasks {
+            let icon = if task.is_completed { "✅" } else { "🔲" };
+            let title = task.title.as_deref().unwrap_or("(No Title)");
+            println!("      {} [{}] {}", icon, task.id, title);
+        }
     }
 
     Ok(())
