@@ -1,6 +1,7 @@
 use crate::api::{TaskList, TaskLocal};
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection, Result};
+use reqwest::get;
+use rusqlite::{Connection, Result, Row, params};
 
 pub struct Database {
     conn: Connection,
@@ -35,6 +36,7 @@ impl Database {
                 completed TEXT,
                 parent TEXT,
                 updated TEXT,
+                dirty INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(list_id) REFERENCES task_lists(id)
             )",
             [],
@@ -76,7 +78,7 @@ impl Database {
 
     pub fn get_tasks_for_list(&self, list_id: &str) -> Result<Vec<TaskLocal>> {
         let mut stmt = self.conn.prepare("
-        SELECT id, list_id, title, is_completed, notes, due, completed, parent, updated FROM tasks WHERE list_id = ?1")?;
+        SELECT id, list_id, title, is_completed, notes, due, completed, parent, updated, dirty FROM tasks WHERE list_id = ?1")?;
 
         let task_iter = stmt.query_map(params![list_id], |row| {
             let is_completed_int: i32 = row.get(3)?;
@@ -102,6 +104,9 @@ impl Database {
                     .map(|dt| dt.with_timezone(&Utc))
             });
 
+            let dirty_int: i32 = row.get(9)?;
+            let is_dirty: bool = dirty_int == 1;
+
             Ok(TaskLocal {
                 id: row.get(0)?,
                 list_id: row.get(1)?,
@@ -112,6 +117,7 @@ impl Database {
                 completed,
                 parent: row.get(7)?,
                 updated,
+                is_dirty
             })
         })?;
 
@@ -132,9 +138,10 @@ impl Database {
             let completed_str = task.completed.map(|c| c.to_rfc3339());
             let updated_str = task.updated.map(|u| u.to_rfc3339());
             let is_completed_int = if task.is_completed { 1 } else { 0 };
+            let is_dirty_int = if task.is_dirty { 1 } else { 0 };
             tx.execute(
-                "INSERT INTO tasks (id, list_id, title, is_completed, notes, due, completed, parent, updated) 
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) 
+                "INSERT INTO tasks (id, list_id, title, is_completed, notes, due, completed, parent, updated, dirty) 
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) 
                 ON CONFLICT(id) DO UPDATE SET 
                     list_id = excluded.list_id, 
                     title = excluded.title, 
@@ -143,7 +150,8 @@ impl Database {
                     due = excluded.due, 
                     completed = excluded.completed, 
                     parent = excluded.parent, 
-                    updated = excluded.updated",
+                    updated = excluded.updated,
+                    dirty = excluded.dirty",
 
                 params![
                     task.id,
@@ -155,6 +163,7 @@ impl Database {
                     completed_str,
                     task.parent,
                     updated_str,
+                    is_dirty_int
                 ],
             )?;
         }

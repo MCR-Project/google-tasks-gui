@@ -4,6 +4,7 @@ mod db;
 
 use api::{GoogleTasksClient, TaskLocal};
 use db::Database;
+use sha2::digest::consts::True;
 use std::error::Error;
 
 #[tokio::main]
@@ -109,6 +110,7 @@ async fn run_feature_tests(
         completed: None,
         parent: None,
         updated: None,
+        is_dirty: true,
     };
 
     let created_raw = client.create_task(&first_list.id, &draft_task).await?;

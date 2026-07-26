@@ -38,6 +38,7 @@ pub struct TaskLocal {
     pub completed: Option<chrono::DateTime<chrono::Utc>>, // Completion date of the task
     pub parent: Option<String>,                           // Parent task ID (in case of subtask)
     pub updated: Option<chrono::DateTime<chrono::Utc>>,   // Last modification date
+    pub is_dirty: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -243,6 +244,7 @@ impl TaskLocal {
                 .ok()
                 .map(|dt| dt.with_timezone(&Utc))
         });
+        let is_dirty = false;
 
         TaskLocal {
             id: task_get.id,
@@ -254,6 +256,7 @@ impl TaskLocal {
             completed,
             parent: task_get.parent,
             updated,
+            is_dirty
         }
     }
 
