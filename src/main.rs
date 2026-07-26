@@ -21,6 +21,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Step 3: Synchronize remote Google Tasks data into SQLite
     println!("🔄 Syncing data from Google Tasks API...");
     sync_remote_to_db(&mut client, &mut db).await?;
+    sync_local_to_db(&mut client, &mut db).await?;
 
     // Step 4: Run API feature tests (create task & toggle completion)
     println!("\n🧪 Running API feature tests...");
@@ -84,6 +85,37 @@ async fn sync_remote_to_db(
         );
     }
 
+    Ok(())
+}
+
+async fn sync_local_to_db(
+    client: &mut GoogleTasksClient,
+    db: &mut Database,
+) -> Result<(), Box<dyn Error>> {
+    let dirty_tasks = db.get_dirty_task()?;
+
+    if dirty_tasks.is_empty() {
+        println!("✅ No dirty tasks to sync.");
+        return Ok(());
+    }
+    println!("📋 Retrieved {} Dirty Task(s)", dirty_tasks.len());
+
+    for mut task in dirty_tasks {
+        let raw_tasks = client
+            .update_task(
+                &task.list_id,
+                &task.id,
+                task.title.as_deref(),
+                task.notes.as_deref(),
+                Some(task.is_completed),
+                task.due.as_ref(),
+            )
+            .await?;
+
+        task = TaskLocal::from_task_get(raw_tasks, task.list_id.clone());
+        task.is_dirty = false;
+        db.save_tasks(&[task])?;
+    }
     Ok(())
 }
 

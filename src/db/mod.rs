@@ -1,6 +1,6 @@
 use crate::api::{TaskList, TaskLocal};
 use chrono::{DateTime, Utc};
-use rusqlite::{Connection, Result, params};
+use rusqlite::{params, Connection, Result};
 
 pub struct Database {
     conn: Connection,
@@ -116,7 +116,7 @@ impl Database {
                 completed,
                 parent: row.get(7)?,
                 updated,
-                is_dirty
+                is_dirty,
             })
         })?;
 
@@ -179,5 +179,55 @@ impl Database {
 
         tx.commit()?;
         Ok(())
+    }
+
+    pub fn get_dirty_task(&self) -> Result<Vec<TaskLocal>> {
+        let mut stmt = self.conn.prepare("SELECT id, list_id, title, is_completed, notes, due, completed, parent, updated, dirty FROM tasks WHERE dirty = 1")?;
+
+        let task_iter = stmt.query_map([], |row| {
+            let is_completed_int: i32 = row.get(3)?;
+            let due_str: Option<String> = row.get(5)?;
+            let completed_str: Option<String> = row.get(6)?;
+            let updated_str: Option<String> = row.get(8)?;
+
+            let is_dirty: bool = row.get(9)?;
+
+            let due = due_str.as_ref().and_then(|due_str| {
+                DateTime::parse_from_rfc3339(due_str)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&Utc))
+            });
+
+            let completed = completed_str.as_ref().and_then(|completed_str| {
+                DateTime::parse_from_rfc3339(completed_str)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&Utc))
+            });
+
+            let updated = updated_str.as_ref().and_then(|updated_str| {
+                DateTime::parse_from_rfc3339(updated_str)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&Utc))
+            });
+
+            Ok(TaskLocal {
+                id: row.get(0)?,
+                list_id: row.get(1)?,
+                title: row.get(2)?,
+                is_completed: is_completed_int != 0,
+                notes: row.get(4)?,
+                due,
+                completed,
+                parent: row.get(7)?,
+                updated,
+                is_dirty,
+            })
+        })?;
+
+        let mut tasks = Vec::new();
+        for task in task_iter {
+            tasks.push(task?);
+        }
+        Ok(tasks)
     }
 }

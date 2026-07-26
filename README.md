@@ -97,8 +97,8 @@ While Google Tasks is widely used across mobile and web, Linux lacks a modern, h
 
 > **Goal:** Handle network interruptions and background bidirection sync safely.
 
-* [ ] **Offline Queueing:** Mark tasks modified offline with a `dirty` flag in SQLite.
-* [ ] **Background Sync Worker:** Tokio task running every 5 minutes (or on manual trigger) to push `dirty` tasks and fetch server updates.
+* [x] **Offline Queueing:** Mark tasks modified offline with a `dirty` flag in SQLite.
+* [x] **Background Sync Worker:** Tokio task running every 5 minutes (or on manual trigger) to push `dirty` tasks and fetch server updates.
 * [ ] **Conflict Resolution:** Simple "Last Write Wins" timestamp comparison strategy.
 * [x] **Auto-Refresh Tokens:** Silent token refresh using saved `refresh_token` when HTTP 401 occurs.
 
