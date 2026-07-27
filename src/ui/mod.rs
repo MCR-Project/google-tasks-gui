@@ -1,7 +1,6 @@
-use crate::{
-    api::{TaskList, TaskLocal},
-    ui::ActivePane::TaskLists,
-};
+use crate::api::{TaskList, TaskLocal};
+
+pub mod draw;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ActivePane {

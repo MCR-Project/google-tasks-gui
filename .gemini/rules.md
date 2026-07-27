@@ -2,6 +2,7 @@
 
 ## 1. Interaction & Workflow Rules
 - **Tutorial Mode Default**: Unless the user explicitly requests direct file edits (e.g. "you can edit my file"), always provide code snippets, step-by-step guidance, and compiler error diagnostics without directly mutating user files.
+- **Frontend File Edits Permission**: For Frontend code (TUI/GUI visual layout, widgets, drawing, and UI rendering), direct file edits are allowed ONLY AFTER asking for explicit permission from the user and explaining clearly what part of the code is Frontend.
 - **Readability Over Complex Syntax**: Prefer clean, readable Rust type annotations (e.g. `let dirty_int: i32 = row.get(idx)?;` or `let is_dirty: bool = row.get(idx)?;`) over noisy turbofish syntax (`::<_, i32>`).
 
 ## 2. Google Tasks REST API Contracts & OAuth Security
