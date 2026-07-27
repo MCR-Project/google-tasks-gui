@@ -60,8 +60,6 @@ pub async fn sync_remote_to_db(
     db: &mut Database,
 ) -> Result<(), Box<dyn Error>> {
     let lists = client.get_task_lists().await?;
-    println!("📋 Retrieved {} Task List(s)", lists.len());
-
     db.save_task_lists(&lists)?;
 
     for list in &lists {
@@ -72,11 +70,6 @@ pub async fn sync_remote_to_db(
             .collect();
 
         db.save_tasks(&local_tasks)?;
-        println!(
-            "  • Saved {} task(s) for list '{}'",
-            local_tasks.len(),
-            list.title
-        );
     }
 
     Ok(())
@@ -89,24 +82,34 @@ pub async fn sync_local_to_db(
     let dirty_tasks = db.get_dirty_task()?;
 
     if dirty_tasks.is_empty() {
-        println!("✅ No dirty tasks to sync.");
         return Ok(());
     }
-    println!("📋 Retrieved {} Dirty Task(s)", dirty_tasks.len());
 
     for mut task in dirty_tasks {
-        let raw_tasks = client
-            .update_task(
-                &task.list_id,
-                &task.id,
-                task.title.as_deref(),
-                task.notes.as_deref(),
-                Some(task.is_completed),
-                task.due.as_ref(),
-            )
-            .await?;
+        let raw_task = if task.id.is_empty() {
+            // 🆕 Brand new task: Use HTTP POST (create_task)
+            client.create_task(&task.list_id, &task).await?
+        } else {
+            // ✏️ Existing task edit: Use HTTP PATCH (update_task)
+            client
+                .update_task(
+                    &task.list_id,
+                    &task.id,
+                    task.title.as_deref(),
+                    task.notes.as_deref(),
+                    Some(task.is_completed),
+                    task.due.as_ref(),
+                )
+                .await?
+        };
 
-        task = TaskLocal::from_task_get(raw_tasks, task.list_id.clone());
+        // If it was a new task, delete the temporary empty-id record from SQLite
+        if task.id.is_empty() {
+            let _ = db.delete_tasks_db(&[String::new()]);
+        }
+
+        // Save official server task back to SQLite with is_dirty = false
+        task = TaskLocal::from_task_get(raw_task, task.list_id.clone());
         task.is_dirty = false;
         db.save_tasks(&[task])?;
     }
