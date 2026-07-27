@@ -16,7 +16,7 @@ use crate::ui::{App, EditAction, InputMode};
 pub async fn run(
     client: &mut GoogleTasksClient,
     db: &mut Database,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     // 1. Load initial Task Lists and Tasks from SQLite cache
     let lists = db.get_task_lists()?;
     let first_list_id = lists.first().map(|l| l.id.as_str()).unwrap_or("");

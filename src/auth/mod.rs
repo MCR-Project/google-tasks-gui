@@ -44,7 +44,7 @@ pub fn generate_pkce() -> PkceChallenge {
     }
 }
 
-pub async fn authenticate() -> Result<TokenResponse, Box<dyn std::error::Error>> {
+pub async fn authenticate() -> Result<TokenResponse, Box<dyn std::error::Error + Send + Sync>> {
     let client_id = match option_env!("GOOGLE_CLIENT_ID") {
         Some(val) if !val.is_empty() => val.to_string(),
         _ => env::var("GOOGLE_CLIENT_ID")
@@ -141,7 +141,7 @@ fn extract_code_and_state_from_request(request: &str) -> Option<(String, String)
 
 pub async fn refresh_access_token(
     refresh_token: &str,
-) -> Result<TokenResponse, Box<dyn std::error::Error>> {
+) -> Result<TokenResponse, Box<dyn std::error::Error + Send + Sync>> {
     let client_id =
         env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID must be set in .env file");
     let client_secret =

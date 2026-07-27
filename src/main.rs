@@ -1,6 +1,7 @@
 mod api;
 mod auth;
 mod db;
+mod gui;
 mod ui;
 
 use api::{GoogleTasksClient, TaskLocal};
@@ -8,10 +9,17 @@ use db::Database;
 use std::error::Error;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     dotenvy::dotenv().ok();
 
-    println!("🚀 Starting gTasks TUI Application...\n");
+    let args: Vec<String> = std::env::args().collect();
+    let is_tui_mode = args.contains(&"--tui".to_string());
+
+    if is_tui_mode {
+        println!("🚀 Starting gTasks Terminal TUI...\n");
+    } else {
+        println!("🚀 Starting gTasks Modern Web GUI...\n");
+    }
 
     // Step 1: Authenticate and obtain API Client
     let mut client = obtain_authenticated_client().await?;
@@ -24,15 +32,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let _ = sync_remote_to_db(&mut client, &mut db).await;
     let _ = sync_local_to_db(&mut client, &mut db).await;
 
-    // Step 4: Run the interactive Terminal UI Dashboard!
-    ui::run(&mut client, &mut db).await?;
+    // Step 4: Run selected Interface (GUI or TUI)
+    if is_tui_mode {
+        ui::run(&mut client, &mut db).await?;
+    } else {
+        gui::run(client, db).await?;
+    }
 
     println!("\n✨ Thank you for using gTasks!");
     Ok(())
 }
 
 /// Resolves authentication by checking Keyring first, falling back to OAuth PKCE.
-async fn obtain_authenticated_client() -> Result<GoogleTasksClient, Box<dyn Error>> {
+async fn obtain_authenticated_client() -> Result<GoogleTasksClient, Box<dyn Error + Send + Sync>> {
     let token_response = if let Ok(refresh_token) = auth::keyring::get_refresh_token() {
         println!("🔐 Found saved refresh token in OS keyring. Refreshing access token...");
         auth::refresh_access_token(&refresh_token).await?
@@ -60,7 +72,7 @@ use futures::future::join_all;
 pub async fn sync_remote_to_db(
     client: &mut GoogleTasksClient,
     db: &mut Database,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     let lists = client.get_task_lists().await?;
     db.save_task_lists(&lists)?;
 
@@ -73,7 +85,7 @@ pub async fn sync_remote_to_db(
                 .into_iter()
                 .map(|raw| TaskLocal::from_task_get(raw, list_id.clone()))
                 .collect();
-            Ok::<Vec<TaskLocal>, Box<dyn Error>>(local_tasks)
+            Ok::<Vec<TaskLocal>, Box<dyn Error + Send + Sync>>(local_tasks)
         }
     });
 
@@ -91,7 +103,7 @@ pub async fn sync_remote_to_db(
 pub async fn sync_local_to_db(
     client: &mut GoogleTasksClient,
     db: &mut Database,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     let dirty_tasks = db.get_dirty_task()?;
 
     if dirty_tasks.is_empty() {
