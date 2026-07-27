@@ -10,7 +10,7 @@ use ratatui::Terminal;
 
 use crate::api::GoogleTasksClient;
 use crate::db::Database;
-use crate::ui::{App, InputMode};
+use crate::ui::{App, EditAction, InputMode};
 
 /// Main TUI Terminal Controller & Event Loop
 pub async fn run(
@@ -80,6 +80,9 @@ pub async fn run(
                                 }
                             }
                             KeyCode::Char('c') => app.start_create_task(),
+                            KeyCode::Char('L') | KeyCode::Char('l') if app.active_pane == crate::ui::ActivePane::TaskLists => {
+                                app.start_create_list();
+                            }
                             KeyCode::Char('e') => app.start_edit_task(),
                             KeyCode::Char('d') | KeyCode::Delete => {
                                 if let Some(removed) = app.delete_selected_task() {
@@ -93,21 +96,54 @@ pub async fn run(
                                 terminal.draw(|f| crate::ui::draw::draw(f, &app))?;
                                 let _ = crate::sync_local_to_db(client, db).await;
                                 let _ = crate::sync_remote_to_db(client, db).await;
+
+                                // Reload lists and tasks from SQLite after sync
+                                if let Ok(updated_lists) = db.get_task_lists() {
+                                    app.task_lists = updated_lists;
+                                }
+                                if let Some(selected_list) = app.selected_list() {
+                                    if let Ok(updated_tasks) = db.get_tasks_for_list(&selected_list.id) {
+                                        app.tasks = updated_tasks;
+                                    }
+                                }
+
                                 app.status_message = "Synced with Google Tasks API! ✅".to_string();
                             }
                             _ => {}
                         },
                         InputMode::Editing => match key.code {
+                            KeyCode::Tab => {
+                                app.cycle_edit_field();
+                            }
                             KeyCode::Enter => {
-                                app.submit_input();
-                                if let Some(task) = app.selected_task() {
-                                    let _ = db.save_tasks(&[task.clone()]);
+                                if app.edit_action == EditAction::CreateList {
+                                    let list_name = app.title_buffer.trim().to_string();
+                                    if !list_name.is_empty() {
+                                        app.status_message = format!("Creating list '{}'...", list_name);
+                                        terminal.draw(|f| crate::ui::draw::draw(f, &app))?;
+                                        if let Ok(new_list) = client.create_task_list(&list_name).await {
+                                            let _ = db.save_task_lists(&[new_list.clone()]);
+                                            app.task_lists.push(new_list);
+                                            app.selected_list_idx = app.task_lists.len() - 1;
+                                            app.tasks.clear();
+                                            app.status_message = format!("Created Task List '{}' ✅", list_name);
+                                        }
+                                    }
+                                    app.title_buffer.clear();
+                                    app.input_mode = InputMode::Normal;
+                                } else {
+                                    app.submit_input();
+                                    if let Some(task) = app.selected_task() {
+                                        let _ = db.save_tasks(&[task.clone()]);
+                                    }
                                 }
                             }
                             KeyCode::Esc => app.input_mode = InputMode::Normal,
-                            KeyCode::Char(c) => app.input_buffer.push(c),
+                            KeyCode::Char(c) => {
+                                app.active_buffer_mut().push(c);
+                            }
                             KeyCode::Backspace => {
-                                app.input_buffer.pop();
+                                app.active_buffer_mut().pop();
                             }
                             _ => {}
                         },

@@ -71,6 +71,18 @@ impl GoogleTasksClient {
         Ok(task_lists_response.items.unwrap_or_default())
     }
 
+    // Create a new task list
+    pub async fn create_task_list(&mut self, title: &str) -> Result<TaskList, reqwest::Error> {
+        let url = "https://www.googleapis.com/tasks/v1/users/@me/lists";
+        let payload = serde_json::json!({ "title": title });
+        let response = self
+            .execute_with_retry(|client, token| client.post(url).bearer_auth(token).json(&payload))
+            .await?;
+        let response = response.error_for_status()?;
+        let created: TaskList = response.json().await?;
+        Ok(created)
+    }
+
     // Get the tasks for a specific task list
     pub async fn get_tasks(
         &mut self,
