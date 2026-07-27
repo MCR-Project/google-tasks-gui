@@ -303,4 +303,34 @@ impl Database {
         }
         Ok(tasks)
     }
+
+    pub fn get_uncompleted_count_for_list(&self, list_id: &str) -> Result<usize> {
+        let conn = self.conn.lock().unwrap();
+        let count: usize = conn.query_row(
+            "SELECT COUNT(*) FROM tasks WHERE list_id = ?1 AND is_completed = 0",
+            params![list_id],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    pub fn get_all_uncompleted_count(&self) -> Result<usize> {
+        let conn = self.conn.lock().unwrap();
+        let count: usize = conn.query_row(
+            "SELECT COUNT(*) FROM tasks WHERE is_completed = 0",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    pub fn get_starred_uncompleted_count(&self) -> Result<usize> {
+        let conn = self.conn.lock().unwrap();
+        let count: usize = conn.query_row(
+            "SELECT COUNT(*) FROM tasks WHERE is_completed = 0 AND title LIKE '⭐ %'",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
 }
