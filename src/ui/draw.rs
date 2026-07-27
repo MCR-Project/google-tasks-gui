@@ -1,7 +1,7 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame,
 };
 
@@ -12,7 +12,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
     // 1. Vertical split: Main Body vs Bottom Status Footer
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(0), Constraint::Length(1)])
+        .constraints([Constraint::Min(0), Constraint::Length(2)])
         .split(frame.area());
 
     // 2. Horizontal split: Left Sidebar (30%) vs Right Task List Grid (70%)
@@ -88,9 +88,10 @@ pub fn draw(frame: &mut Frame, app: &App) {
     );
     frame.render_widget(tasks_widget, main_chunks[1]);
 
-    // 5. Render Bottom Status Bar (Footer)
+    // 5. Render Bottom Status Bar (Footer) with text wrapping
     let footer = Paragraph::new(app.status_message.as_str())
-        .style(Style::default().fg(Color::White).bg(Color::Blue));
+        .style(Style::default().fg(Color::White).bg(Color::Blue))
+        .wrap(Wrap { trim: true });
     frame.render_widget(footer, chunks[1]);
 
     // 6. Render Centered Input Popup Modal when Editing / Creating
@@ -103,12 +104,14 @@ pub fn draw(frame: &mut Frame, app: &App) {
             EditAction::EditTitle => " Edit Task Title ",
         };
 
-        let input_widget = Paragraph::new(app.input_buffer.as_str()).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(popup_title)
-                .border_style(Style::default().fg(Color::Yellow)),
-        );
+        let input_widget = Paragraph::new(app.input_buffer.as_str())
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(popup_title)
+                    .border_style(Style::default().fg(Color::Yellow)),
+            )
+            .wrap(Wrap { trim: true });
         frame.render_widget(input_widget, area);
     }
 }
