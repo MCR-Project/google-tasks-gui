@@ -45,6 +45,7 @@ pub struct TasksResponse {
 }
 
 // API
+#[derive(Debug, Clone)]
 pub struct GoogleTasksClient {
     pub client: reqwest::Client,
     pub access_token: String,

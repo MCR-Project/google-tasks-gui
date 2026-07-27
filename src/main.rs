@@ -54,7 +54,9 @@ async fn obtain_authenticated_client() -> Result<GoogleTasksClient, Box<dyn Erro
     Ok(GoogleTasksClient::new(token_response.access_token))
 }
 
-/// Fetches task lists and tasks from Google API and caches them into SQLite.
+use futures::future::join_all;
+
+/// Fetches task lists and tasks from Google API in parallel and caches them into SQLite.
 pub async fn sync_remote_to_db(
     client: &mut GoogleTasksClient,
     db: &mut Database,
@@ -62,14 +64,25 @@ pub async fn sync_remote_to_db(
     let lists = client.get_task_lists().await?;
     db.save_task_lists(&lists)?;
 
-    for list in &lists {
-        let raw_tasks = client.get_tasks(&list.id, true).await?;
-        let local_tasks: Vec<TaskLocal> = raw_tasks
-            .into_iter()
-            .map(|raw| TaskLocal::from_task_get(raw, list.id.clone()))
-            .collect();
+    let fetch_futures = lists.iter().map(|list| {
+        let mut client_clone = client.clone();
+        let list_id = list.id.clone();
+        async move {
+            let raw_tasks = client_clone.get_tasks(&list_id, true).await?;
+            let local_tasks: Vec<TaskLocal> = raw_tasks
+                .into_iter()
+                .map(|raw| TaskLocal::from_task_get(raw, list_id.clone()))
+                .collect();
+            Ok::<Vec<TaskLocal>, Box<dyn Error>>(local_tasks)
+        }
+    });
 
-        db.save_tasks(&local_tasks)?;
+    let results = join_all(fetch_futures).await;
+
+    for res in results {
+        if let Ok(local_tasks) = res {
+            db.save_tasks(&local_tasks)?;
+        }
     }
 
     Ok(())

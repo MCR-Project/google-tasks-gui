@@ -45,12 +45,24 @@ pub fn generate_pkce() -> PkceChallenge {
 }
 
 pub async fn authenticate() -> Result<TokenResponse, Box<dyn std::error::Error>> {
-    let client_id =
-        env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID must be set in .env file");
-    let client_secret =
-        env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET must be set in .env file");
+    let client_id = match option_env!("GOOGLE_CLIENT_ID") {
+        Some(val) if !val.is_empty() => val.to_string(),
+        _ => env::var("GOOGLE_CLIENT_ID")
+            .expect("GOOGLE_CLIENT_ID must be set at compile-time or in .env file"),
+    };
+    let client_secret = match option_env!("GOOGLE_CLIENT_SECRET") {
+        Some(val) if !val.is_empty() => val.to_string(),
+        _ => env::var("GOOGLE_CLIENT_SECRET")
+            .expect("GOOGLE_CLIENT_SECRET must be set at compile-time or in .env file"),
+    };
 
-    let redirect_uri = "http://127.0.0.1:8080/callback";
+    // Start a simple HTTP server to listen for the OAuth callback
+    let listener = match TcpListener::bind("127.0.0.1:8080").await {
+        Ok(l) => l,
+        Err(_) => TcpListener::bind("127.0.0.1:0").await?,
+    };
+    let port = listener.local_addr()?.port();
+    let redirect_uri = format!("http://127.0.0.1:{}/callback", port);
     let scope = "https://www.googleapis.com/auth/tasks";
 
     // Generate PKCE code_verifier and code_challenge
@@ -64,10 +76,7 @@ pub async fn authenticate() -> Result<TokenResponse, Box<dyn std::error::Error>>
 
     println!("Please open the following URL in your browser to authenticate:");
     open::that(&auth_url)?;
-
-    // Start a simple HTTP server to listen for the OAuth callback
-    let listener = TcpListener::bind("127.0.0.1:8080").await?;
-    println!("Listening for OAuth callback on http://127.0.0.1:8080/callback...");
+    println!("Listening for OAuth callback on {}...", redirect_uri);
 
     let (mut socket, _) = listener.accept().await?;
     let mut buffer = [0; 2048];

@@ -1,21 +1,26 @@
 use crate::api::{TaskList, TaskLocal};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, Result};
+use std::sync::{Arc, Mutex};
 
+#[derive(Clone)]
 pub struct Database {
-    conn: Connection,
+    conn: Arc<Mutex<Connection>>,
 }
 
 impl Database {
     pub fn new(db_path: &str) -> Result<Self> {
         let conn = Connection::open(db_path)?;
-        let db = Self { conn };
+        let db = Self {
+            conn: Arc::new(Mutex::new(conn)),
+        };
         db.init_schema()?;
         Ok(db)
     }
 
     fn init_schema(&self) -> Result<()> {
-        self.conn.execute(
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
             "CREATE TABLE IF NOT EXISTS task_lists (
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
@@ -24,7 +29,7 @@ impl Database {
             [],
         )?;
 
-        self.conn.execute(
+        conn.execute(
             "CREATE TABLE IF NOT EXISTS tasks (
                 id TEXT PRIMARY KEY,
                 list_id TEXT NOT NULL,
@@ -43,8 +48,9 @@ impl Database {
         Ok(())
     }
 
-    pub fn save_task_lists(&mut self, task_lists: &[TaskList]) -> Result<()> {
-        let tx = self.conn.transaction()?;
+    pub fn save_task_lists(&self, task_lists: &[TaskList]) -> Result<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
 
         for task_list in task_lists {
             tx.execute(
@@ -57,9 +63,8 @@ impl Database {
     }
 
     pub fn get_task_lists(&self) -> Result<Vec<TaskList>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT id, title, updated FROM task_lists")?;
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, title, updated FROM task_lists")?;
         let task_list_iter = stmt.query_map([], |row| {
             Ok(TaskList {
                 id: row.get(0)?,
@@ -76,7 +81,8 @@ impl Database {
     }
 
     pub fn get_tasks_for_list(&self, list_id: &str) -> Result<Vec<TaskLocal>> {
-        let mut stmt = self.conn.prepare("
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("
         SELECT id, list_id, title, is_completed, notes, due, completed, parent, updated, dirty FROM tasks WHERE list_id = ?1")?;
 
         let task_iter = stmt.query_map(params![list_id], |row| {
@@ -128,11 +134,11 @@ impl Database {
         Ok(tasks)
     }
 
-    pub fn save_tasks(&mut self, tasks: &[TaskLocal]) -> Result<()> {
-        let tx = self.conn.transaction()?;
+    pub fn save_tasks(&self, tasks: &[TaskLocal]) -> Result<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
 
         for task in tasks {
-            // convert chrono datetime into rfc3339 string for storage in sqlite
             let due_str = task.due.map(|d| d.to_rfc3339());
             let completed_str = task.completed.map(|c| c.to_rfc3339());
             let updated_str = task.updated.map(|u| u.to_rfc3339());
@@ -171,8 +177,9 @@ impl Database {
         Ok(())
     }
 
-    pub fn delete_tasks_db(&mut self, task_ids: &[String]) -> Result<()> {
-        let tx = self.conn.transaction()?;
+    pub fn delete_tasks_db(&self, task_ids: &[String]) -> Result<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
 
         for task_id in task_ids {
             tx.execute("DELETE FROM tasks WHERE id = ?1", params![task_id])?;
@@ -183,7 +190,8 @@ impl Database {
     }
 
     pub fn get_dirty_task(&self) -> Result<Vec<TaskLocal>> {
-        let mut stmt = self.conn.prepare("SELECT id, list_id, title, is_completed, notes, due, completed, parent, updated, dirty FROM tasks WHERE dirty = 1")?;
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, list_id, title, is_completed, notes, due, completed, parent, updated, dirty FROM tasks WHERE dirty = 1")?;
 
         let task_iter = stmt.query_map([], |row| {
             let is_completed_int: i32 = row.get(3)?;
@@ -191,7 +199,8 @@ impl Database {
             let completed_str: Option<String> = row.get(6)?;
             let updated_str: Option<String> = row.get(8)?;
 
-            let is_dirty: bool = row.get(9)?;
+            let dirty_int: i32 = row.get(9)?;
+            let is_dirty: bool = dirty_int == 1;
 
             let due = due_str.as_ref().and_then(|due_str| {
                 DateTime::parse_from_rfc3339(due_str)
