@@ -12,7 +12,7 @@ use crate::db::Database;
 fn load_css() {
     let provider = gtk::CssProvider::new();
     let css = r#"
-/* Google Tasks Material Design 3 Tokens & Styling */
+/* Google Tasks Material Design 3 Tokens & Expressive Styling */
 :root {
     --md-sys-color-background: #FFFFFF;
     --md-sys-color-surface: #FFFFFF;
@@ -20,7 +20,7 @@ fn load_css() {
     --md-sys-color-outline: rgba(0, 0, 0, 0.08);
     --md-sys-color-primary: #1A73E8;
     --md-sys-color-on-primary-container: #041E49;
-    --md-sys-color-primary-container: #C2E7FF;
+    --md-sys-color-primary-container: #E8F0FE;
     --md-sys-color-on-surface: #1F1F1F;
     --md-sys-color-on-surface-variant: #444746;
 }
@@ -60,7 +60,7 @@ button.fab-button:hover {
 
 /* Active Navigation Pill */
 .navigation-sidebar row.pill-active, button.pill-active, button.suggested-action {
-    background-color: #C2E7FF;
+    background-color: #E8F0FE;
     color: #041E49;
     border-radius: 9999px;
     font-weight: 600;
@@ -69,7 +69,7 @@ button.fab-button:hover {
     transition: all 150ms ease;
 }
 
-/* Material 3 Task Cards */
+/* Material 3 Task Cards & Containers */
 .task-card {
     background-color: #FFFFFF;
     border-radius: 16px;
@@ -85,15 +85,67 @@ button.fab-button:hover {
     color: #1F1F1F;
 }
 
-/* Interactive Rows & Hover States */
-.task-row, listbox row {
-    border-radius: 12px;
-    padding: 4px 8px;
+/* Inline Task Creator Entry */
+entry.flat, entry.inline-task-entry {
+    background-color: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 6px 8px;
+}
+
+/* Item Rows & Borderless Styling */
+listbox.boxed-list, listbox.task-list {
+    border: none;
+    background-color: transparent;
+}
+
+listbox row {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    border-radius: 8px;
+    margin-bottom: 2px;
+    padding: 6px 8px;
     transition: all 150ms ease;
 }
 
+listbox row:last-child {
+    border-bottom: none;
+}
+
 listbox row:hover {
-    background-color: rgba(0, 0, 0, 0.04);
+    background-color: rgba(0, 0, 0, 0.03);
+    border-radius: 8px;
+}
+
+/* Tonal Selection Highlight */
+listbox row:selected, listbox row:active {
+    background-color: #E8F0FE;
+    color: #041E49;
+    border-radius: 8px;
+}
+
+/* Circular Checkboxes */
+checkbutton check {
+    border-radius: 50%;
+    border: 1.5px solid #747775;
+    min-width: 18px;
+    min-height: 18px;
+    transition: all 150ms ease;
+}
+
+checkbutton:checked check {
+    background-color: #1A73E8;
+    border-color: #1A73E8;
+    color: #FFFFFF;
+}
+
+/* De-clutter Icons (reveal trash on row hover) */
+.delete-btn {
+    opacity: 0;
+    transition: opacity 150ms ease;
+}
+
+listbox row:hover .delete-btn {
+    opacity: 1;
 }
 
 /* Add Task Action Button */
@@ -116,6 +168,37 @@ button.add-task-btn:hover {
     letter-spacing: 0.5px;
     color: #444746;
     text-transform: uppercase;
+}
+
+/* Right Side-Drawer ("Task Details") Surface & Inputs */
+.task-details-drawer {
+    background-color: #FFFFFF;
+    border-left: 1px solid rgba(0, 0, 0, 0.08);
+    padding: 16px;
+}
+
+.m3-filled-field {
+    background-color: #F1F3F4;
+    border-radius: 8px 8px 0 0;
+    border: none;
+    border-bottom: 2px solid #1A73E8;
+    padding: 8px 12px;
+}
+
+button.m3-floating-pill {
+    background-color: #1A73E8;
+    color: #FFFFFF;
+    border-radius: 9999px;
+    padding: 10px 24px;
+    font-weight: 600;
+    border: none;
+    box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.12);
+    transition: all 150ms ease;
+}
+
+button.m3-floating-pill:hover {
+    background-color: #1557B0;
+    box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.18);
 }
     "#;
     provider.load_from_data(css);
@@ -208,6 +291,7 @@ impl relm4::factory::FactoryComponent for ListRow {
             gtk::Button {
                 set_icon_name: "user-trash-symbolic",
                 add_css_class: "flat",
+                add_css_class: "delete-btn",
                 connect_clicked[sender] => move |_| {
                     sender.input(ListRowMsg::Delete);
                 }
@@ -333,12 +417,15 @@ fn create_card_widget(list: &TaskList, tasks: &[TaskLocal], sender: ComponentSen
     header.append(&menu_btn);
     card.append(&header);
 
-    // 2. Add Task Entry
+    // 2. Add Task Entry (Inline Task Creator)
     let entry_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     entry_box.set_margin_all(8);
     let entry = gtk::Entry::new();
     entry.set_hexpand(true);
     entry.set_placeholder_text(Some("Add a task"));
+    entry.add_css_class("inline-task-entry");
+    entry.add_css_class("flat");
+
     let add_btn = gtk::Button::builder()
         .icon_name("list-add-symbolic")
         .css_classes(vec!["add-task-btn".to_string(), "flat".to_string()])
@@ -741,15 +828,14 @@ impl SimpleComponent for AppModel {
                         set_visible: model.selected_task_id.is_some(),
                     },
 
-                    // Right Sidebar Task Details
+                    // Right Side-Drawer Task Details
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
                         set_width_request: 320,
-                        set_margin_all: 16,
                         set_spacing: 12,
                         #[watch]
                         set_visible: model.selected_task_id.is_some(),
-                        add_css_class: "background",
+                        add_css_class: "task-details-drawer",
 
                         gtk::Label {
                             set_text: "Task Details",
@@ -765,6 +851,7 @@ impl SimpleComponent for AppModel {
                         gtk::Entry {
                             set_buffer: &model.task_title_buffer,
                             set_placeholder_text: Some("Task Title"),
+                            add_css_class: "m3-filled-field",
                         },
 
                         gtk::Label {
@@ -778,6 +865,7 @@ impl SimpleComponent for AppModel {
 
                             gtk::MenuButton {
                                 set_hexpand: true,
+                                add_css_class: "m3-filled-field",
                                 #[watch]
                                 set_label: &model.task_due_date
                                     .map(|d| format!("📅 {}", d.format("%Y-%m-%d")))
@@ -817,6 +905,7 @@ impl SimpleComponent for AppModel {
                         },
                         gtk::ScrolledWindow {
                             set_vexpand: true,
+                            add_css_class: "m3-filled-field",
                             #[wrap(Some)]
                             set_child = &gtk::TextView {
                                 set_buffer: Some(&model.task_notes_buffer),
@@ -837,6 +926,7 @@ impl SimpleComponent for AppModel {
                                 set_hexpand: true,
                                 set_placeholder_text: Some("Subtask title..."),
                                 set_buffer: &model.subtask_entry_buffer,
+                                add_css_class: "inline-task-entry",
                                 connect_activate[sender, buffer = model.subtask_entry_buffer.clone()] => move |_| {
                                     sender.input(AppMsg::CreateSubtask(buffer.text().to_string()));
                                 }
@@ -852,7 +942,9 @@ impl SimpleComponent for AppModel {
 
                         gtk::Button {
                             set_label: "Save Changes",
-                            add_css_class: "suggested-action",
+                            add_css_class: "m3-floating-pill",
+                            set_halign: gtk::Align::End,
+                            set_margin_top: 16,
                             connect_clicked => AppMsg::SaveTaskDetails,
                         }
                     }
