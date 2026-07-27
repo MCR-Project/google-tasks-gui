@@ -128,6 +128,73 @@ entry.flat, entry.inline-task-entry {
     padding: 6px 8px;
 }
 
+/* Expandable Inline Edit Row */
+.task-row-expanded {
+    background-color: #EDF2FA;
+    border-radius: 12px;
+    padding: 8px;
+    box-shadow: 0px 1px 3px rgba(0, 0, 0, 0.08);
+    transition: all 150ms ease;
+}
+
+/* Quick Date Chips */
+button.date-chip {
+    background-color: #FFFFFF;
+    color: #444746;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 9999px;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    transition: all 150ms ease;
+}
+
+button.date-chip:hover {
+    background-color: rgba(0, 0, 0, 0.04);
+}
+
+/* Section Header & Count Badge */
+.section-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #444746;
+}
+
+.count-badge {
+    background-color: #E8F0FE;
+    color: #041E49;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 9999px;
+    padding: 2px 8px;
+}
+
+expander.section-expander {
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
+/* Bottom Quick Add Entry Bar */
+.bottom-add-box {
+    background-color: #F1F3F4;
+    border-radius: 9999px;
+    padding: 4px 12px;
+    margin: 8px;
+    transition: all 150ms ease;
+}
+
+.bottom-add-box entry {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+/* Completed Strikethrough */
+.completed-strikethrough {
+    text-decoration: line-through;
+    color: #8E918F;
+}
+
 /* Item Rows & Borderless Styling */
 listbox.boxed-list, listbox.task-list-view {
     border: none;
@@ -359,6 +426,7 @@ impl relm4::factory::FactoryComponent for ListRow {
 
 pub struct TaskRow {
     task: TaskLocal,
+    is_expanded: bool,
 }
 
 #[derive(Debug)]
@@ -378,48 +446,162 @@ impl relm4::factory::FactoryComponent for TaskRow {
 
     view! {
         gtk::Box {
-            set_orientation: gtk::Orientation::Horizontal,
-            set_spacing: 12,
-            set_margin_all: 8,
-            set_margin_start: if self.task.parent.as_ref().map(|p| !p.is_empty()).unwrap_or(false) { 32 } else { 8 },
+            set_orientation: gtk::Orientation::Vertical,
 
-            add_controller = gtk::GestureClick {
-                set_button: 1,
-                connect_pressed[sender] => move |_, _, _, _| {
-                    sender.input(TaskRowMsg::Select);
+            // Collapsed Row View
+            gtk::Box {
+                set_orientation: gtk::Orientation::Horizontal,
+                set_spacing: 12,
+                set_margin_all: 8,
+                set_margin_start: if self.task.parent.as_ref().map(|p| !p.is_empty()).unwrap_or(false) { 32 } else { 8 },
+                #[watch]
+                set_visible: !self.is_expanded,
+
+                add_controller = gtk::GestureClick {
+                    set_button: 1,
+                    connect_pressed[sender] => move |_, _, _, _| {
+                        sender.input(TaskRowMsg::Select);
+                    }
+                },
+
+                gtk::Label {
+                    set_text: "↳",
+                    add_css_class: "dim-label",
+                    set_visible: self.task.parent.as_ref().map(|p| !p.is_empty()).unwrap_or(false),
+                },
+
+                gtk::CheckButton {
+                    set_active: self.task.is_completed,
+                    connect_toggled[sender] => move |btn| {
+                        sender.input(TaskRowMsg::Toggle(btn.is_active()));
+                    }
+                },
+                gtk::Label {
+                    set_text: self.task.title.as_deref().unwrap_or("").strip_prefix("⭐ ").unwrap_or_else(|| self.task.title.as_deref().unwrap_or("")),
+                    set_hexpand: true,
+                    set_halign: gtk::Align::Start,
+                    set_wrap: true,
+                },
+
+                // Right-Aligned Action Icons Bar
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Horizontal,
+                    set_spacing: 4,
+
+                    gtk::Button {
+                        set_label: "✏️",
+                        add_css_class: "flat",
+                        connect_clicked[sender] => move |_| {
+                            sender.input(TaskRowMsg::Select);
+                        }
+                    },
+                    gtk::Button {
+                        set_label: if self.task.title.as_deref().unwrap_or("").starts_with("⭐ ") { "⭐" } else { "☆" },
+                        add_css_class: "flat",
+                        connect_clicked[sender] => move |_| {
+                            sender.input(TaskRowMsg::ToggleStar);
+                        }
+                    },
+                    gtk::Button {
+                        set_label: "⋮",
+                        add_css_class: "flat",
+                    }
                 }
             },
 
-            gtk::Label {
-                set_text: "↳",
-                add_css_class: "dim-label",
-                set_visible: self.task.parent.as_ref().map(|p| !p.is_empty()).unwrap_or(false),
-            },
+            // Expanded Inline Edit View (Google Tasks Style)
+            gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 8,
+                set_margin_all: 8,
+                add_css_class: "task-row-expanded",
+                #[watch]
+                set_visible: self.is_expanded,
 
-            gtk::CheckButton {
-                set_active: self.task.is_completed,
-                connect_toggled[sender] => move |btn| {
-                    sender.input(TaskRowMsg::Toggle(btn.is_active()));
-                }
-            },
-            gtk::Label {
-                set_text: self.task.title.as_deref().unwrap_or("").strip_prefix("⭐ ").unwrap_or_else(|| self.task.title.as_deref().unwrap_or("")),
-                set_hexpand: true,
-                set_halign: gtk::Align::Start,
-                set_wrap: true,
-            },
-            gtk::Button {
-                set_label: if self.task.title.as_deref().unwrap_or("").starts_with("⭐ ") { "⭐" } else { "☆" },
-                add_css_class: "flat",
-                connect_clicked[sender] => move |_| {
-                    sender.input(TaskRowMsg::ToggleStar);
+                // Top Bar: Drag Grip + Checkbox + Title Entry + Options
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Horizontal,
+                    set_spacing: 8,
+
+                    gtk::Image {
+                        set_icon_name: Some("open-menu-symbolic"),
+                        add_css_class: "dim-label",
+                    },
+
+                    gtk::CheckButton {
+                        set_active: self.task.is_completed,
+                        connect_toggled[sender] => move |btn| {
+                            sender.input(TaskRowMsg::Toggle(btn.is_active()));
+                        }
+                    },
+
+                    gtk::Entry {
+                        set_hexpand: true,
+                        set_text: self.task.title.as_deref().unwrap_or(""),
+                        add_css_class: "flat",
+                        add_css_class: "inline-task-entry",
+                    },
+
+                    gtk::Button {
+                        set_icon_name: "more-vertical-symbolic",
+                        add_css_class: "flat",
+                    }
+                },
+
+                // Details Field
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Horizontal,
+                    set_spacing: 8,
+                    set_margin_start: 28,
+
+                    gtk::Label {
+                        set_text: "≡",
+                        add_css_class: "dim-label",
+                    },
+
+                    gtk::Entry {
+                        set_hexpand: true,
+                        set_placeholder_text: Some("Details"),
+                        set_text: self.task.notes.as_deref().unwrap_or(""),
+                        add_css_class: "flat",
+                        add_css_class: "inline-task-entry",
+                    }
+                },
+
+                // Quick Date Chips Row
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Horizontal,
+                    set_spacing: 6,
+                    set_margin_start: 28,
+
+                    gtk::Button {
+                        set_label: "Today",
+                        add_css_class: "date-chip",
+                    },
+
+                    gtk::Button {
+                        set_label: "Tomorrow",
+                        add_css_class: "date-chip",
+                    },
+
+                    gtk::Button {
+                        set_label: "🕒",
+                        add_css_class: "date-chip",
+                    },
+
+                    gtk::Button {
+                        set_label: "⇄",
+                        add_css_class: "date-chip",
+                        set_hexpand: true,
+                        set_halign: gtk::Align::End,
+                    }
                 }
             }
         }
     }
 
     fn init_model(init: Self::Init, _index: &relm4::factory::DynamicIndex, _sender: relm4::factory::FactorySender<Self>) -> Self {
-        Self { task: init }
+        Self { task: init, is_expanded: false }
     }
 
     fn update(&mut self, msg: Self::Input, sender: relm4::factory::FactorySender<Self>) {
@@ -429,6 +611,7 @@ impl relm4::factory::FactoryComponent for TaskRow {
                 sender.output(AppMsg::ToggleTask(self.task.id.clone(), active)).unwrap();
             }
             TaskRowMsg::Select => {
+                self.is_expanded = !self.is_expanded;
                 sender.output(AppMsg::SelectTask(self.task.id.clone())).unwrap();
             }
             TaskRowMsg::ToggleStar => {
@@ -459,59 +642,39 @@ fn create_card_widget(list: &TaskList, tasks: &[TaskLocal], sender: ComponentSen
     header.append(&menu_btn);
     card.append(&header);
 
-    // 2. Add Task Entry (Inline Task Creator)
-    let entry_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    entry_box.set_margin_all(8);
-    let entry = gtk::Entry::new();
-    entry.set_hexpand(true);
-    entry.set_placeholder_text(Some("Add a task"));
-    entry.add_css_class("inline-task-entry");
-    entry.add_css_class("flat");
+    // Filter tasks into uncompleted (Pending) & completed
+    let uncompleted: Vec<&TaskLocal> = tasks.iter().filter(|t| !t.is_completed).collect();
+    let completed: Vec<&TaskLocal> = tasks.iter().filter(|t| t.is_completed).collect();
 
-    let add_btn = gtk::Button::builder()
-        .icon_name("list-add-symbolic")
-        .css_classes(vec!["add-task-btn".to_string(), "flat".to_string()])
-        .build();
-
-    let list_id = list.id.clone();
-    let sender_clone = sender.clone();
-    let entry_clone = entry.clone();
-    add_btn.connect_clicked(move |_| {
-        let text = entry_clone.text().to_string();
-        if !text.trim().is_empty() {
-            sender_clone.input(AppMsg::CreateTaskForList(list_id.clone(), text));
-            entry_clone.set_text("");
-        }
-    });
-
-    let list_id_act = list.id.clone();
-    let sender_act = sender.clone();
-    let entry_act = entry.clone();
-    entry.connect_activate(move |_| {
-        let text = entry_act.text().to_string();
-        if !text.trim().is_empty() {
-            sender_act.input(AppMsg::CreateTaskForList(list_id_act.clone(), text));
-            entry_act.set_text("");
-        }
-    });
-
-    entry_box.append(&entry);
-    entry_box.append(&add_btn);
-    card.append(&entry_box);
-
-    // 3. Uncompleted Tasks List
     let scroll = gtk::ScrolledWindow::new();
     scroll.set_vexpand(true);
-    scroll.set_min_content_height(280);
+    scroll.set_min_content_height(240);
 
-    let list_box = gtk::ListBox::new();
-    list_box.add_css_class("boxed-list");
+    let scroll_content = gtk::Box::new(gtk::Orientation::Vertical, 8);
 
-    for task in tasks {
+    // 1. Pending Section (Collapsible Expander)
+    let pending_header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let pending_title = gtk::Label::new(Some("Pending"));
+    pending_title.add_css_class("section-title");
+    let pending_badge = gtk::Label::new(Some(&uncompleted.len().to_string()));
+    pending_badge.add_css_class("count-badge");
+    pending_header.append(&pending_title);
+    pending_header.append(&pending_badge);
+
+    let pending_expander = gtk::Expander::new(None::<&str>);
+    pending_expander.set_label_widget(Some(&pending_header));
+    pending_expander.set_expanded(true);
+    pending_expander.add_css_class("section-expander");
+
+    let pending_list_box = gtk::ListBox::new();
+    pending_list_box.add_css_class("boxed-list");
+
+    for task in uncompleted {
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         row.set_margin_all(6);
+
         let check = gtk::CheckButton::new();
-        check.set_active(task.is_completed);
+        check.set_active(false);
         let task_id = task.id.clone();
         let sender_toggle = sender.clone();
         check.connect_toggled(move |btn| {
@@ -531,13 +694,150 @@ fn create_card_widget(list: &TaskList, tasks: &[TaskLocal], sender: ComponentSen
         });
         row.add_controller(gesture);
 
+        // Action Icons
+        let actions = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+
+        let edit_btn = gtk::Button::with_label("✏️");
+        edit_btn.add_css_class("flat");
+        let task_id_edit = task.id.clone();
+        let sender_edit = sender.clone();
+        edit_btn.connect_clicked(move |_| {
+            sender_edit.input(AppMsg::SelectTask(task_id_edit.clone()));
+        });
+
+        let star_btn = gtk::Button::with_label(if task.title.as_deref().unwrap_or("").starts_with("⭐ ") { "⭐" } else { "☆" });
+        star_btn.add_css_class("flat");
+        let task_id_star = task.id.clone();
+        let sender_star = sender.clone();
+        star_btn.connect_clicked(move |_| {
+            sender_star.input(AppMsg::ToggleTaskStar(task_id_star.clone()));
+        });
+
+        let more_btn = gtk::Button::with_label("⋮");
+        more_btn.add_css_class("flat");
+
+        actions.append(&edit_btn);
+        actions.append(&star_btn);
+        actions.append(&more_btn);
+
         row.append(&check);
         row.append(&label);
-        list_box.append(&row);
+        row.append(&actions);
+        pending_list_box.append(&row);
     }
 
-    scroll.set_child(Some(&list_box));
+    pending_expander.set_child(Some(&pending_list_box));
+    scroll_content.append(&pending_expander);
+
+    // 2. Completed Section (Collapsible Expander)
+    if !completed.is_empty() {
+        let completed_header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let completed_title = gtk::Label::new(Some("Completed"));
+        completed_title.add_css_class("section-title");
+        let completed_badge = gtk::Label::new(Some(&completed.len().to_string()));
+        completed_badge.add_css_class("count-badge");
+        completed_header.append(&completed_title);
+        completed_header.append(&completed_badge);
+
+        let completed_expander = gtk::Expander::new(None::<&str>);
+        completed_expander.set_label_widget(Some(&completed_header));
+        completed_expander.set_expanded(false);
+        completed_expander.add_css_class("section-expander");
+
+        let completed_list_box = gtk::ListBox::new();
+        completed_list_box.add_css_class("boxed-list");
+
+        for task in completed {
+            let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            row.set_margin_all(6);
+            let check = gtk::CheckButton::new();
+            check.set_active(true);
+            let task_id = task.id.clone();
+            let sender_toggle = sender.clone();
+            check.connect_toggled(move |btn| {
+                sender_toggle.input(AppMsg::ToggleTask(task_id.clone(), btn.is_active()));
+            });
+
+            let title_str = task.title.as_deref().unwrap_or("").strip_prefix("⭐ ").unwrap_or_else(|| task.title.as_deref().unwrap_or("")).to_string();
+            let label = gtk::Label::new(Some(&title_str));
+            label.set_halign(gtk::Align::Start);
+            label.set_hexpand(true);
+            label.add_css_class("completed-strikethrough");
+
+            let task_id_select = task.id.clone();
+            let sender_select = sender.clone();
+            let gesture = gtk::GestureClick::new();
+            gesture.connect_pressed(move |_, _, _, _| {
+                sender_select.input(AppMsg::SelectTask(task_id_select.clone()));
+            });
+            row.add_controller(gesture);
+
+            let actions = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+
+            let star_btn = gtk::Button::with_label(if task.title.as_deref().unwrap_or("").starts_with("⭐ ") { "⭐" } else { "☆" });
+            star_btn.add_css_class("flat");
+            let task_id_star = task.id.clone();
+            let sender_star = sender.clone();
+            star_btn.connect_clicked(move |_| {
+                sender_star.input(AppMsg::ToggleTaskStar(task_id_star.clone()));
+            });
+
+            let more_btn = gtk::Button::with_label("⋮");
+            more_btn.add_css_class("flat");
+
+            actions.append(&star_btn);
+            actions.append(&more_btn);
+
+            row.append(&check);
+            row.append(&label);
+            row.append(&actions);
+            completed_list_box.append(&row);
+        }
+
+        completed_expander.set_child(Some(&completed_list_box));
+        scroll_content.append(&completed_expander);
+    }
+
+    scroll.set_child(Some(&scroll_content));
     card.append(&scroll);
+
+    // 3. Bottom Quick Add Entry Bar
+    let bottom_add_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    bottom_add_box.add_css_class("bottom-add-box");
+
+    let bottom_entry = gtk::Entry::new();
+    bottom_entry.set_hexpand(true);
+    bottom_entry.set_placeholder_text(Some("Add new task..."));
+    bottom_entry.add_css_class("flat");
+
+    let bottom_add_btn = gtk::Button::with_label("➕");
+    bottom_add_btn.add_css_class("flat");
+
+    let list_id = list.id.clone();
+    let sender_clone = sender.clone();
+    let bottom_entry_clone = bottom_entry.clone();
+    bottom_add_btn.connect_clicked(move |_| {
+        let text = bottom_entry_clone.text().to_string();
+        if !text.trim().is_empty() {
+            sender_clone.input(AppMsg::CreateTaskForList(list_id.clone(), text));
+            bottom_entry_clone.set_text("");
+        }
+    });
+
+    let list_id_act = list.id.clone();
+    let sender_act = sender.clone();
+    let bottom_entry_act = bottom_entry.clone();
+    bottom_entry.connect_activate(move |_| {
+        let text = bottom_entry_act.text().to_string();
+        if !text.trim().is_empty() {
+            sender_act.input(AppMsg::CreateTaskForList(list_id_act.clone(), text));
+            bottom_entry_act.set_text("");
+        }
+    });
+
+    bottom_add_box.append(&bottom_entry);
+    bottom_add_box.append(&bottom_add_btn);
+    card.append(&bottom_add_box);
 
     card
 }
@@ -1104,10 +1404,7 @@ impl SimpleComponent for AppModel {
         load_css();
 
         let lists = db.get_task_lists().unwrap_or_default();
-        let mut checked_list_ids = HashSet::new();
-        if let Some(first) = lists.first() {
-            checked_list_ids.insert(first.id.clone());
-        }
+        let checked_list_ids: HashSet<String> = lists.iter().map(|l| l.id.clone()).collect();
 
         let initial_tasks = if let Some(first) = lists.first() {
             db.get_tasks_for_list(&first.id).unwrap_or_default()
@@ -1175,7 +1472,11 @@ impl SimpleComponent for AppModel {
     fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
         match msg {
             AppMsg::SetViewMode(mode) => {
-                self.view_mode = mode;
+                if mode == ViewMode::AllTasks {
+                    self.view_mode = ViewMode::Board;
+                } else {
+                    self.view_mode = mode;
+                }
                 self.selected_task_id = None;
                 self.reload_tasks(&sender);
                 self.reload_lists();
