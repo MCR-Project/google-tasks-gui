@@ -18,6 +18,7 @@ pub enum AppMsg {
     CreateTask(String),
     CreateSubtask(String),
     CreateList(String),
+    DeleteList(String),
     UpdateDueDate(i32, i32, i32),
     ClearDueDate,
     SaveTaskDetails,
@@ -32,6 +33,7 @@ pub struct ListRow {
 #[derive(Debug)]
 pub enum ListRowMsg {
     Select,
+    Delete,
 }
 
 #[relm4::factory(pub)]
@@ -43,11 +45,26 @@ impl relm4::factory::FactoryComponent for ListRow {
     type ParentWidget = gtk::ListBox;
 
     view! {
-        gtk::Button {
-            set_label: &self.list.title,
-            add_css_class: "flat",
-            connect_clicked[sender] => move |_| {
-                sender.input(ListRowMsg::Select);
+        gtk::Box {
+            set_orientation: gtk::Orientation::Horizontal,
+            set_spacing: 4,
+
+            gtk::Button {
+                set_label: &self.list.title,
+                add_css_class: "flat",
+                set_hexpand: true,
+                set_halign: gtk::Align::Fill,
+                connect_clicked[sender] => move |_| {
+                    sender.input(ListRowMsg::Select);
+                }
+            },
+
+            gtk::Button {
+                set_icon_name: "user-trash-symbolic",
+                add_css_class: "flat",
+                connect_clicked[sender] => move |_| {
+                    sender.input(ListRowMsg::Delete);
+                }
             }
         }
     }
@@ -60,6 +77,9 @@ impl relm4::factory::FactoryComponent for ListRow {
         match msg {
             ListRowMsg::Select => {
                 sender.output(AppMsg::SelectList(self.list.id.clone())).unwrap();
+            }
+            ListRowMsg::Delete => {
+                sender.output(AppMsg::DeleteList(self.list.id.clone())).unwrap();
             }
         }
     }
@@ -89,14 +109,21 @@ impl relm4::factory::FactoryComponent for TaskRow {
             set_orientation: gtk::Orientation::Horizontal,
             set_spacing: 12,
             set_margin_all: 8,
-            
+            set_margin_start: if self.task.parent.as_ref().map(|p| !p.is_empty()).unwrap_or(false) { 32 } else { 8 },
+
             add_controller = gtk::GestureClick {
                 set_button: 1, // left click
                 connect_pressed[sender] => move |_, _, _, _| {
                     sender.input(TaskRowMsg::Select);
                 }
             },
-            
+
+            gtk::Label {
+                set_text: "↳",
+                add_css_class: "dim-label",
+                set_visible: self.task.parent.as_ref().map(|p| !p.is_empty()).unwrap_or(false),
+            },
+
             gtk::CheckButton {
                 set_active: self.task.is_completed,
                 connect_toggled[sender] => move |btn| {
@@ -147,6 +174,7 @@ pub struct AppModel {
     selected_list_id: String,
     is_starred_view: bool,
     task_entry_buffer: gtk::EntryBuffer,
+    list_entry_buffer: gtk::EntryBuffer,
     selected_task_id: Option<String>,
     task_title_buffer: gtk::EntryBuffer,
     task_notes_buffer: gtk::TextBuffer,
@@ -158,7 +186,7 @@ impl AppModel {
     fn reload_tasks(&mut self) {
         let mut guard = self.tasks.guard();
         guard.clear();
-        
+
         let tasks = if self.is_starred_view {
             if let Ok(all) = self.db.get_all_tasks() {
                 all.into_iter().filter(|t| t.title.as_deref().unwrap_or("").starts_with("⭐ ")).collect()
@@ -168,7 +196,7 @@ impl AppModel {
         } else {
             self.db.get_tasks_for_list(&self.selected_list_id).unwrap_or_default()
         };
-        
+
         for task in tasks {
             guard.push_back(task);
         }
@@ -213,7 +241,7 @@ impl SimpleComponent for AppModel {
                         set_orientation: gtk::Orientation::Vertical,
                         set_width_request: 260,
                         add_css_class: "background",
-                        
+
                         gtk::Button {
                             set_label: "⭐ Starred",
                             add_css_class: "flat",
@@ -237,6 +265,30 @@ impl SimpleComponent for AppModel {
                             #[local_ref]
                             task_lists -> gtk::ListBox {
                                 add_css_class: "navigation-sidebar",
+                            }
+                        },
+
+                        // Add List Entry Bar
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Horizontal,
+                            set_spacing: 4,
+                            set_margin_all: 8,
+
+                            gtk::Entry {
+                                set_hexpand: true,
+                                set_placeholder_text: Some("New list..."),
+                                set_buffer: &model.list_entry_buffer,
+                                connect_activate[sender, buffer = model.list_entry_buffer.clone()] => move |_| {
+                                    sender.input(AppMsg::CreateList(buffer.text().to_string()));
+                                }
+                            },
+
+                            gtk::Button {
+                                set_icon_name: "list-add-symbolic",
+                                add_css_class: "flat",
+                                connect_clicked[sender, buffer = model.list_entry_buffer.clone()] => move |_| {
+                                    sender.input(AppMsg::CreateList(buffer.text().to_string()));
+                                }
                             }
                         }
                     },
@@ -318,35 +370,46 @@ impl SimpleComponent for AppModel {
                             set_placeholder_text: Some("Task Title"),
                         },
 
+                        gtk::Label {
+                            set_text: "Due Date",
+                            set_halign: gtk::Align::Start,
+                            add_css_class: "caption",
+                        },
                         gtk::Box {
                             set_orientation: gtk::Orientation::Horizontal,
                             set_spacing: 8,
-                            gtk::Label {
-                                set_text: "Due Date",
-                                set_halign: gtk::Align::Start,
-                                add_css_class: "caption",
+
+                            gtk::MenuButton {
                                 set_hexpand: true,
+                                #[watch]
+                                set_label: &model.task_due_date
+                                    .map(|d| format!("📅 {}", d.format("%Y-%m-%d")))
+                                    .unwrap_or_else(|| "📅 Set Due Date".to_string()),
+                                #[wrap(Some)]
+                                set_popover = &gtk::Popover {
+                                    #[wrap(Some)]
+                                    set_child = &gtk::Calendar {
+                                        set_halign: gtk::Align::Center,
+                                        #[watch]
+                                        select_day: &gtk::glib::DateTime::from_local(
+                                            model.task_due_date.map(|d| d.year()).unwrap_or_else(|| chrono::Local::now().year()),
+                                            model.task_due_date.map(|d| d.month() as i32).unwrap_or_else(|| chrono::Local::now().month() as i32),
+                                            model.task_due_date.map(|d| d.day() as i32).unwrap_or_else(|| chrono::Local::now().day() as i32),
+                                            0, 0, 0f64
+                                        ).unwrap_or_else(|_| gtk::glib::DateTime::now_local().unwrap()),
+
+                                        connect_day_selected[sender] => move |cal| {
+                                            let date = cal.date();
+                                            sender.input(AppMsg::UpdateDueDate(date.year(), date.month(), date.day_of_month()));
+                                        }
+                                    }
+                                }
                             },
+
                             gtk::Button {
-                                set_label: "Clear Date",
+                                set_label: "Clear",
                                 add_css_class: "flat",
                                 connect_clicked => AppMsg::ClearDueDate,
-                            }
-                        },
-                        
-                        gtk::Calendar {
-                            set_halign: gtk::Align::Center,
-                            #[watch]
-                            set_date: &glib::DateTime::from_local(
-                                model.task_due_date.map(|d| d.year()).unwrap_or_else(|| chrono::Local::now().year()),
-                                model.task_due_date.map(|d| d.month() as i32).unwrap_or_else(|| chrono::Local::now().month() as i32),
-                                model.task_due_date.map(|d| d.day() as i32).unwrap_or_else(|| chrono::Local::now().day() as i32),
-                                0, 0, 0f64
-                            ).unwrap_or_else(|_| glib::DateTime::now_local().unwrap()),
-                            
-                            connect_day_selected[sender] => move |cal| {
-                                let date = cal.date();
-                                sender.input(AppMsg::UpdateDueDate(date.year(), date.month(), date.day_of_month()));
                             }
                         },
 
@@ -363,13 +426,13 @@ impl SimpleComponent for AppModel {
                                 set_wrap_mode: gtk::WrapMode::WordChar,
                             }
                         },
-                        
+
                         gtk::Label {
                             set_text: "Add Subtask",
                             set_halign: gtk::Align::Start,
                             add_css_class: "caption",
                         },
-                        
+
                         gtk::Box {
                             set_orientation: gtk::Orientation::Horizontal,
                             set_spacing: 8,
@@ -438,6 +501,7 @@ impl SimpleComponent for AppModel {
             selected_list_id: first_id,
             is_starred_view: false,
             task_entry_buffer: gtk::EntryBuffer::new(None::<&str>),
+            list_entry_buffer: gtk::EntryBuffer::new(None::<&str>),
             selected_task_id: None,
             task_title_buffer: gtk::EntryBuffer::new(None::<&str>),
             task_notes_buffer: gtk::TextBuffer::new(None),
@@ -468,7 +532,6 @@ impl SimpleComponent for AppModel {
             }
             AppMsg::SelectTask(task_id) => {
                 self.selected_task_id = Some(task_id.clone());
-                // Since tasks can come from multiple lists in Starred view, we query all or just DB
                 if let Ok(all_tasks) = self.db.get_all_tasks() {
                     if let Some(task) = all_tasks.into_iter().find(|t| t.id == task_id) {
                         self.task_title_buffer.set_text(task.title.as_deref().unwrap_or(""));
@@ -504,12 +567,11 @@ impl SimpleComponent for AppModel {
                         task.updated = Some(chrono::Utc::now());
                         task.is_dirty = true;
                         let _ = self.db.save_tasks(&[task.clone()]);
-                        
-                        // If we are currently editing this task, update the title buffer
+
                         if Some(task_id) == self.selected_task_id {
                             self.task_title_buffer.set_text(task.title.as_deref().unwrap_or(""));
                         }
-                        
+
                         self.reload_tasks();
                     }
                 }
@@ -547,7 +609,6 @@ impl SimpleComponent for AppModel {
                     return;
                 }
                 if let Some(ref parent_id) = self.selected_task_id {
-                    // We need the list_id of the parent task
                     if let Ok(all_tasks) = self.db.get_all_tasks() {
                         if let Some(parent_task) = all_tasks.into_iter().find(|t| &t.id == parent_id) {
                             let new_task = TaskLocal {
@@ -574,18 +635,18 @@ impl SimpleComponent for AppModel {
                     if let Ok(all_tasks) = self.db.get_all_tasks() {
                         if let Some(mut task) = all_tasks.into_iter().find(|t| t.id == *task_id) {
                             task.title = Some(self.task_title_buffer.text().to_string());
-                            
+
                             let start = self.task_notes_buffer.start_iter();
                             let end = self.task_notes_buffer.end_iter();
                             let notes = self.task_notes_buffer.text(&start, &end, false).to_string();
                             task.notes = if notes.is_empty() { None } else { Some(notes) };
-                            
+
                             if let Some(due) = self.task_due_date {
                                 task.due = due.and_hms_opt(0, 0, 0).map(|dt| dt.and_utc());
                             } else {
                                 task.due = None;
                             }
-                            
+
                             task.updated = Some(chrono::Utc::now());
                             task.is_dirty = true;
                             let _ = self.db.save_tasks(&[task.clone()]);
@@ -595,6 +656,9 @@ impl SimpleComponent for AppModel {
                 }
             }
             AppMsg::CreateList(title) => {
+                if title.trim().is_empty() {
+                    return;
+                }
                 let client = self.client.clone();
                 let db = self.db.clone();
                 let sender = sender.clone();
@@ -609,6 +673,37 @@ impl SimpleComponent for AppModel {
                         sender.input(AppMsg::SyncCloud);
                     }
                 });
+                self.list_entry_buffer.set_text("");
+            }
+            AppMsg::DeleteList(list_id) => {
+                let _ = self.db.delete_task_list_db(&list_id);
+                let client = self.client.clone();
+                let list_id_clone = list_id.clone();
+                std::thread::spawn(move || {
+                    if let Ok(rt) = tokio::runtime::Runtime::new() {
+                        rt.block_on(async {
+                            let mut client_mut = client;
+                            let _ = client_mut.delete_task_list(&list_id_clone).await;
+                        });
+                    }
+                });
+                if self.selected_list_id == list_id {
+                    self.selected_list_id = String::new();
+                    self.selected_task_id = None;
+                }
+                if let Ok(lists) = self.db.get_task_lists() {
+                    let mut guard = self.task_lists.guard();
+                    guard.clear();
+                    for list in &lists {
+                        guard.push_back(list.clone());
+                    }
+                    if self.selected_list_id.is_empty() {
+                        if let Some(first) = lists.first() {
+                            self.selected_list_id = first.id.clone();
+                        }
+                    }
+                }
+                self.reload_tasks();
             }
             AppMsg::SyncCloud => {
                 let mut client = self.client.clone();

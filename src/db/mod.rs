@@ -80,6 +80,15 @@ impl Database {
         Ok(task_lists)
     }
 
+    pub fn delete_task_list_db(&self, list_id: &str) -> Result<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        tx.execute("DELETE FROM tasks WHERE list_id = ?1", params![list_id])?;
+        tx.execute("DELETE FROM task_lists WHERE id = ?1", params![list_id])?;
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn get_tasks_for_list(&self, list_id: &str) -> Result<Vec<TaskLocal>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare("
