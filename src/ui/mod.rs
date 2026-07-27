@@ -1,6 +1,8 @@
 use crate::api::{TaskList, TaskLocal};
 
 pub mod draw;
+pub mod run;
+pub use run::run;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ActivePane {

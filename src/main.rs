@@ -11,7 +11,7 @@ use std::error::Error;
 async fn main() -> Result<(), Box<dyn Error>> {
     dotenvy::dotenv().ok();
 
-    println!("🚀 Starting gTasks Headless Test Runner...\n");
+    println!("🚀 Starting gTasks TUI Application...\n");
 
     // Step 1: Authenticate and obtain API Client
     let mut client = obtain_authenticated_client().await?;
@@ -19,22 +19,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Step 2: Initialize local SQLite Database
     let mut db = Database::new("task_lists.db")?;
 
-    // Step 3: Synchronize remote Google Tasks data into SQLite
-    println!("🔄 Syncing data from Google Tasks API...");
-    sync_remote_to_db(&mut client, &mut db).await?;
-    sync_local_to_db(&mut client, &mut db).await?;
+    // Step 3: Synchronize remote & local data on startup
+    println!("🔄 Syncing data with Google Tasks API...");
+    let _ = sync_remote_to_db(&mut client, &mut db).await;
+    let _ = sync_local_to_db(&mut client, &mut db).await;
 
-    // Step 4: Run API feature tests (create task & toggle completion)
-    println!("\n🧪 Running API feature tests...");
-    if let Err(err) = run_feature_tests(&mut client, &mut db).await {
-        eprintln!("⚠️ Feature tests warning: {}", err);
-    }
+    // Step 4: Run the interactive Terminal UI Dashboard!
+    ui::run(&mut client, &mut db).await?;
 
-    // Step 5: Read and display stored SQLite state
-    println!("\n💾 Local Database Contents:");
-    display_database_contents(&db)?;
-
-    println!("\n✨ Execution completed successfully!");
+    println!("\n✨ Thank you for using gTasks!");
     Ok(())
 }
 
@@ -62,7 +55,7 @@ async fn obtain_authenticated_client() -> Result<GoogleTasksClient, Box<dyn Erro
 }
 
 /// Fetches task lists and tasks from Google API and caches them into SQLite.
-async fn sync_remote_to_db(
+pub async fn sync_remote_to_db(
     client: &mut GoogleTasksClient,
     db: &mut Database,
 ) -> Result<(), Box<dyn Error>> {
@@ -89,7 +82,7 @@ async fn sync_remote_to_db(
     Ok(())
 }
 
-async fn sync_local_to_db(
+pub async fn sync_local_to_db(
     client: &mut GoogleTasksClient,
     db: &mut Database,
 ) -> Result<(), Box<dyn Error>> {
@@ -117,92 +110,5 @@ async fn sync_local_to_db(
         task.is_dirty = false;
         db.save_tasks(&[task])?;
     }
-    Ok(())
-}
-
-/// Test runner for API actions: Task Creation and Task Completion Toggle.
-async fn run_feature_tests(
-    client: &mut GoogleTasksClient,
-    db: &mut Database,
-) -> Result<(), Box<dyn Error>> {
-    let lists = db.get_task_lists()?;
-    let first_list = match lists.first() {
-        Some(l) => l,
-        None => return Ok(()),
-    };
-
-    // 1. Test Task Creation
-    let draft_task = TaskLocal {
-        id: String::new(),
-        list_id: first_list.id.clone(),
-        title: Some("⚡ Refactored CLI Test Task".to_string()),
-        is_completed: false,
-        notes: Some("Testing task creation from refactored main.rs".to_string()),
-        due: None,
-        completed: None,
-        parent: None,
-        updated: None,
-        is_dirty: true,
-    };
-
-    let created_raw = client.create_task(&first_list.id, &draft_task).await?;
-    let created_task = TaskLocal::from_task_get(created_raw, first_list.id.clone());
-    println!(
-        "  ✅ [CREATE] Created task ID: '{}' | Title: '{}'",
-        created_task.id,
-        created_task.title.as_deref().unwrap_or("")
-    );
-    db.save_tasks(&[created_task.clone()])?;
-
-    // 2. Test Task Completion Toggle (marking it completed)
-    let toggled_raw = client
-        .toggle_task_completion(&first_list.id, &created_task.id, true)
-        .await?;
-    let toggled_task = TaskLocal::from_task_get(toggled_raw, first_list.id.clone());
-    println!(
-        "  ✅ [TOGGLE] Task ID: '{}' status updated to: {}",
-        toggled_task.id,
-        if toggled_task.is_completed {
-            "Completed ✅"
-        } else {
-            "Pending 🔲"
-        }
-    );
-    db.save_tasks(&[toggled_task])?;
-
-    let delete_result = client.delete_task(&first_list.id, &created_task.id).await;
-    match delete_result {
-        Ok(_) => {
-            println!(
-                "  ✅ [DELETE] Successfully deleted task ID: '{}'",
-                created_task.id
-            );
-            db.delete_tasks_db(&[created_task.id])?;
-        }
-        Err(err) => {
-            eprintln!(
-                "⚠️ [DELETE] Failed to delete task ID: '{}'. Error: {}",
-                created_task.id, err
-            );
-        }
-    }
-
-    Ok(())
-}
-
-/// Reads all records from SQLite and prints them in a clean tree format.
-fn display_database_contents(db: &Database) -> Result<(), Box<dyn Error>> {
-    let stored_task_lists = db.get_task_lists()?;
-
-    for list in stored_task_lists {
-        println!("  📁 [{}] {}", list.id, list.title);
-        let stored_tasks = db.get_tasks_for_list(&list.id)?;
-        for task in stored_tasks {
-            let icon = if task.is_completed { "✅" } else { "🔲" };
-            let title = task.title.as_deref().unwrap_or("(No Title)");
-            println!("      {} [{}] {}", icon, task.id, title);
-        }
-    }
-
     Ok(())
 }
