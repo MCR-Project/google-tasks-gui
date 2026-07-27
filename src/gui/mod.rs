@@ -85,6 +85,41 @@ button.fab-button:hover {
     color: #1F1F1F;
 }
 
+/* Single View Card Container */
+.single-view-container {
+    background-color: #FFFFFF;
+    border-radius: 24px;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: 0px 1px 3px rgba(0, 0, 0, 0.04);
+    padding: 24px;
+    transition: all 150ms ease;
+}
+
+.view-header-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: #1F1F1F;
+}
+
+.inline-add-task-bar {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+}
+
+/* Empty State Fallback Typography */
+.empty-title {
+    font-size: 18px;
+    font-weight: 500;
+    color: #1F1F1F;
+}
+
+.empty-subtitle {
+    font-size: 14px;
+    color: #5F6368;
+    max-width: 320px;
+}
+
 /* Inline Task Creator Entry */
 entry.flat, entry.inline-task-entry {
     background-color: transparent;
@@ -94,7 +129,7 @@ entry.flat, entry.inline-task-entry {
 }
 
 /* Item Rows & Borderless Styling */
-listbox.boxed-list, listbox.task-list {
+listbox.boxed-list, listbox.task-list-view {
     border: none;
     background-color: transparent;
 }
@@ -105,6 +140,13 @@ listbox row {
     margin-bottom: 2px;
     padding: 6px 8px;
     transition: all 150ms ease;
+}
+
+listbox.task-list-view row {
+    margin: 4px 12px;
+    padding: 12px 16px;
+    border-radius: 8px;
+    border-bottom: none;
 }
 
 listbox row:last-child {
@@ -803,19 +845,120 @@ impl SimpleComponent for AppModel {
                                 set_visible: model.view_mode == ViewMode::Board,
                             },
 
+                            // Single View Card Container (Google Tasks Style)
                             gtk::Box {
                                 set_orientation: gtk::Orientation::Vertical,
                                 set_hexpand: true,
-                                set_margin_all: 16,
-                                set_spacing: 12,
+                                set_vexpand: true,
+                                set_margin_all: 24,
+                                set_spacing: 16,
+                                add_css_class: "single-view-container",
                                 #[watch]
                                 set_visible: model.view_mode != ViewMode::Board,
 
+                                // 1. List Header Section
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Horizontal,
+                                    set_spacing: 12,
+
+                                    gtk::Label {
+                                        #[watch]
+                                        set_text: match model.view_mode {
+                                            ViewMode::Starred => "Starred tasks",
+                                            ViewMode::AllTasks => "All tasks",
+                                            _ => "Tasks",
+                                        },
+                                        set_halign: gtk::Align::Start,
+                                        set_hexpand: true,
+                                        add_css_class: "view-header-title",
+                                    },
+
+                                    gtk::Button {
+                                        set_icon_name: "more-vertical-symbolic",
+                                        add_css_class: "flat",
+                                    }
+                                },
+
+                                // 2. Add Task Inline Creator Bar
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Horizontal,
+                                    set_spacing: 8,
+                                    add_css_class: "inline-add-task-bar",
+
+                                    gtk::Image {
+                                        set_icon_name: Some("list-add-symbolic"),
+                                        add_css_class: "accent",
+                                    },
+                                    gtk::Entry {
+                                        set_hexpand: true,
+                                        set_buffer: &model.task_entry_buffer,
+                                        #[watch]
+                                        set_placeholder_text: Some(match model.view_mode {
+                                            ViewMode::Starred => "Add a starred task",
+                                            _ => "Add a task",
+                                        }),
+                                        add_css_class: "flat",
+                                        add_css_class: "inline-task-entry",
+                                        connect_activate[sender, buffer = model.task_entry_buffer.clone()] => move |_| {
+                                            let text = buffer.text().to_string();
+                                            if !text.trim().is_empty() {
+                                                sender.input(AppMsg::CreateTaskForList(String::new(), text));
+                                                buffer.set_text("");
+                                            }
+                                        }
+                                    }
+                                },
+
+                                // 3. Empty State Fallback View
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Vertical,
+                                    set_halign: gtk::Align::Center,
+                                    set_valign: gtk::Align::Center,
+                                    set_vexpand: true,
+                                    set_spacing: 12,
+                                    #[watch]
+                                    set_visible: model.tasks.is_empty(),
+
+                                    gtk::Image {
+                                        #[watch]
+                                        set_icon_name: Some(match model.view_mode {
+                                            ViewMode::Starred => "non-starred-symbolic",
+                                            _ => "emblem-ok-symbolic",
+                                        }),
+                                        set_pixel_size: 96,
+                                        add_css_class: "dim-label",
+                                    },
+
+                                    gtk::Label {
+                                        #[watch]
+                                        set_text: match model.view_mode {
+                                            ViewMode::Starred => "No starred tasks",
+                                            _ => "No tasks yet",
+                                        },
+                                        add_css_class: "empty-title",
+                                    },
+
+                                    gtk::Label {
+                                        #[watch]
+                                        set_text: match model.view_mode {
+                                            ViewMode::Starred => "Mark important tasks with a star so you can easily find them here",
+                                            _ => "Add tasks to keep track of what you need to get done",
+                                        },
+                                        add_css_class: "empty-subtitle",
+                                        set_wrap: true,
+                                        set_justify: gtk::Justification::Center,
+                                    }
+                                },
+
+                                // 4. Task List Items View
                                 gtk::ScrolledWindow {
                                     set_vexpand: true,
+                                    #[watch]
+                                    set_visible: !model.tasks.is_empty(),
+
                                     #[local_ref]
                                     tasks -> gtk::ListBox {
-                                        add_css_class: "boxed-list",
+                                        add_css_class: "task-list-view",
                                     }
                                 }
                             }
@@ -1121,10 +1264,16 @@ impl SimpleComponent for AppModel {
                     return;
                 }
 
+                let task_title = if self.view_mode == ViewMode::Starred && !title.starts_with("⭐ ") {
+                    format!("⭐ {}", title)
+                } else {
+                    title
+                };
+
                 let new_task = TaskLocal {
                     id: String::new(),
                     list_id: target_list_id,
-                    title: Some(title),
+                    title: Some(task_title),
                     is_completed: false,
                     notes: None,
                     due: None,
