@@ -8,8 +8,7 @@ use api::{GoogleTasksClient, TaskLocal};
 use db::Database;
 use std::error::Error;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     dotenvy::dotenv().ok();
 
     let args: Vec<String> = std::env::args().collect();
@@ -18,25 +17,32 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     if is_tui_mode {
         println!("🚀 Starting gTasks Terminal TUI...\n");
     } else {
-        println!("🚀 Starting gTasks Modern Web GUI...\n");
+        println!("🚀 Starting gTasks Native GTK4 Libadwaita App...\n");
     }
 
-    // Step 1: Authenticate and obtain API Client
-    let mut client = obtain_authenticated_client().await?;
+    let rt = tokio::runtime::Runtime::new()?;
 
-    // Step 2: Initialize local SQLite Database
-    let mut db = Database::new("task_lists.db")?;
+    // Step 1 & 2: Authenticate and initialize SQLite DB
+    let (mut client, mut db) = rt.block_on(async {
+        let client = obtain_authenticated_client().await?;
+        let db = Database::new("task_lists.db")?;
+        Ok::<(GoogleTasksClient, Database), Box<dyn Error + Send + Sync>>((client, db))
+    })?;
 
     // Step 3: Synchronize remote & local data on startup
     println!("🔄 Syncing data with Google Tasks API...");
-    let _ = sync_remote_to_db(&mut client, &mut db).await;
-    let _ = sync_local_to_db(&mut client, &mut db).await;
+    rt.block_on(async {
+        let _ = sync_remote_to_db(&mut client, &mut db).await;
+        let _ = sync_local_to_db(&mut client, &mut db).await;
+    });
 
     // Step 4: Run selected Interface (GUI or TUI)
     if is_tui_mode {
-        ui::run(&mut client, &mut db).await?;
+        rt.block_on(async {
+            ui::run(&mut client, &mut db).await
+        })?;
     } else {
-        gui::run(client, db).await?;
+        gui::run(client, db)?;
     }
 
     println!("\n✨ Thank you for using gTasks!");

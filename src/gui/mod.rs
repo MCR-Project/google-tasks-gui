@@ -1,332 +1,222 @@
-use axum::{
-    extract::{Path, State},
-    http::StatusCode,
-    response::Json,
-    routing::{get, post},
-    Router,
-};
-use serde::{Deserialize, Serialize};
+use libadwaita as adw;
+use libadwaita::prelude::*;
+use relm4::prelude::*;
 use std::error::Error;
-use std::net::SocketAddr;
-use std::process::Command;
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use tower_http::cors::CorsLayer;
-use tower_http::services::ServeDir;
 
-use crate::api::{GoogleTasksClient, TaskLocal};
+use crate::api::{GoogleTasksClient, TaskList, TaskLocal};
 use crate::db::Database;
 
-#[derive(Clone)]
-pub struct AppState {
-    pub client: Arc<Mutex<GoogleTasksClient>>,
-    pub db: Database,
-}
-
-#[derive(Deserialize)]
-pub struct CreateListPayload {
-    pub title: String,
-}
-
-#[derive(Deserialize)]
-pub struct CreateTaskPayload {
-    pub list_id: String,
-    pub title: String,
-    pub notes: Option<String>,
-    pub due: Option<String>,
-}
-
-#[derive(Deserialize)]
-pub struct UpdateTaskPayload {
-    pub title: Option<String>,
-    pub notes: Option<String>,
-    pub due: Option<String>,
-    pub is_completed: Option<bool>,
-}
-
-#[derive(Serialize)]
-pub struct ApiResponse<T: Serialize> {
-    pub success: bool,
-    pub data: Option<T>,
-    pub error: Option<String>,
-}
-
-/// Runs the Axum Web Server and opens the dedicated Libadwaita-styled App Window
-pub async fn run(
+pub struct AppModel {
     client: GoogleTasksClient,
     db: Database,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let state = AppState {
-        client: Arc::new(Mutex::new(client)),
-        db,
-    };
-
-    let app = Router::new()
-        .route("/api/lists", get(get_lists).post(create_list))
-        .route("/api/lists/:id/tasks", get(get_tasks))
-        .route("/api/tasks", post(create_task))
-        .route(
-            "/api/tasks/:id",
-            axum::routing::patch(update_task).delete(delete_task),
-        )
-        .route("/api/sync", post(sync_data))
-        .fallback_service(ServeDir::new("web"))
-        .layer(CorsLayer::permissive())
-        .with_state(state);
-
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    println!("🚀 Google Tasks Desktop App running on http://{}", addr);
-
-    let url = format!("http://{}", addr);
-    open_standalone_app_window(&url);
-
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
-
-    Ok(())
+    task_lists: Vec<TaskList>,
+    tasks: Vec<TaskLocal>,
+    selected_list_id: String,
+    status_message: String,
 }
 
-/// Launches a dedicated desktop app window without address bar or browser tabs
-fn open_standalone_app_window(url: &str) {
-    let app_arg = format!("--app={}", url);
-    let name_arg = "--name=GoogleTasks";
-    let class_arg = "--class=GoogleTasks";
-
-    // Attempt launching via Chrome app mode for a native Libadwaita window feel
-    if Command::new("google-chrome")
-        .args([&app_arg, name_arg, class_arg])
-        .spawn()
-        .is_err()
-    {
-        if Command::new("chromium")
-            .args([&app_arg, name_arg, class_arg])
-            .spawn()
-            .is_err()
-        {
-            let _ = open::that(url);
-        }
-    }
+#[derive(Debug)]
+pub enum AppMsg {
+    SelectList(String),
+    ToggleTask(String, bool),
+    CreateTask(String),
+    CreateList(String),
+    SyncCloud,
+    SyncCompleted(Result<(), String>),
 }
 
-async fn get_lists(
-    State(state): State<AppState>,
-) -> (StatusCode, Json<ApiResponse<Vec<crate::api::TaskList>>>) {
-    match state.db.get_task_lists() {
-        Ok(lists) => (
-            StatusCode::OK,
-            Json(ApiResponse {
-                success: true,
-                data: Some(lists),
-                error: None,
-            }),
-        ),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiResponse {
-                success: false,
-                data: None,
-                error: Some(e.to_string()),
-            }),
-        ),
-    }
-}
+#[relm4::component(pub)]
+impl SimpleComponent for AppModel {
+    type Init = (GoogleTasksClient, Database);
+    type Input = AppMsg;
+    type Output = ();
 
-async fn create_list(
-    State(state): State<AppState>,
-    Json(payload): Json<CreateListPayload>,
-) -> (StatusCode, Json<ApiResponse<crate::api::TaskList>>) {
-    let mut client = state.client.lock().await;
+    view! {
+        adw::ApplicationWindow {
+            set_default_width: 960,
+            set_default_height: 640,
+            set_title: Some("Google Tasks — Native Linux App"),
 
-    match client.create_task_list(&payload.title).await {
-        Ok(new_list) => {
-            let _ = state.db.save_task_lists(&[new_list.clone()]);
-            (
-                StatusCode::OK,
-                Json(ApiResponse {
-                    success: true,
-                    data: Some(new_list),
-                    error: None,
-                }),
-            )
-        }
-        Err(e) => (
-            StatusCode::BAD_REQUEST,
-            Json(ApiResponse {
-                success: false,
-                data: None,
-                error: Some(e.to_string()),
-            }),
-        ),
-    }
-}
+            #[wrap(Some)]
+            set_content = &gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
 
-async fn get_tasks(
-    State(state): State<AppState>,
-    Path(list_id): Path<String>,
-) -> (StatusCode, Json<ApiResponse<Vec<TaskLocal>>>) {
-    match state.db.get_tasks_for_list(&list_id) {
-        Ok(tasks) => (
-            StatusCode::OK,
-            Json(ApiResponse {
-                success: true,
-                data: Some(tasks),
-                error: None,
-            }),
-        ),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiResponse {
-                success: false,
-                data: None,
-                error: Some(e.to_string()),
-            }),
-        ),
-    }
-}
+                adw::HeaderBar {
+                    #[wrap(Some)]
+                    set_title_widget = &gtk::Label {
+                        set_text: "Google Tasks",
+                        add_css_class: "title",
+                    },
 
-async fn create_task(
-    State(state): State<AppState>,
-    Json(payload): Json<CreateTaskPayload>,
-) -> (StatusCode, Json<ApiResponse<TaskLocal>>) {
-    let due_dt = payload.due.as_ref().and_then(|d| {
-        chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d")
-            .ok()
-            .map(|nd| nd.and_hms_opt(0, 0, 0).unwrap())
-            .map(|dt| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc))
-    });
+                    pack_end = &gtk::Button {
+                        set_label: "🔄 Sync Cloud",
+                        add_css_class: "suggested-action",
+                        connect_clicked => AppMsg::SyncCloud,
+                    }
+                },
 
-    let new_task = TaskLocal {
-        id: String::new(),
-        list_id: payload.list_id,
-        title: Some(payload.title),
-        is_completed: false,
-        notes: payload.notes,
-        due: due_dt,
-        completed: None,
-        parent: None,
-        updated: Some(chrono::Utc::now()),
-        is_dirty: true,
-    };
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Horizontal,
 
-    if let Err(e) = state.db.save_tasks(&[new_task.clone()]) {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiResponse {
-                success: false,
-                data: None,
-                error: Some(e.to_string()),
-            }),
-        );
-    }
+                    // Left Sidebar
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_width_request: 260,
+                        add_css_class: "background",
 
-    (
-        StatusCode::OK,
-        Json(ApiResponse {
-            success: true,
-            data: Some(new_task),
-            error: None,
-        }),
-    )
-}
+                        gtk::Label {
+                            set_text: "TASK LISTS",
+                            set_halign: gtk::Align::Start,
+                            set_margin_all: 12,
+                            add_css_class: "caption",
+                        },
 
-async fn update_task(
-    State(state): State<AppState>,
-    Path(task_id): Path<String>,
-    Json(payload): Json<UpdateTaskPayload>,
-) -> (StatusCode, Json<ApiResponse<bool>>) {
-    let lists = match state.db.get_task_lists() {
-        Ok(l) => l,
-        Err(_) => Vec::new(),
-    };
+                        gtk::ScrolledWindow {
+                            set_vexpand: true,
+                            #[wrap(Some)]
+                            set_child = &gtk::ListBox {
+                                add_css_class: "navigation-sidebar",
+                            }
+                        }
+                    },
 
-    for list in lists {
-        if let Ok(mut tasks) = state.db.get_tasks_for_list(&list.id) {
-            if let Some(task) = tasks.iter_mut().find(|t| t.id == task_id) {
-                if let Some(t) = payload.title {
-                    task.title = Some(t);
-                }
-                if let Some(n) = payload.notes {
-                    task.notes = Some(n);
-                }
-                if let Some(d) = payload.due {
-                    task.due = chrono::NaiveDate::parse_from_str(&d, "%Y-%m-%d")
-                        .ok()
-                        .map(|nd| nd.and_hms_opt(0, 0, 0).unwrap())
-                        .map(|dt| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc));
-                }
-                if let Some(c) = payload.is_completed {
-                    task.is_completed = c;
-                    if c {
-                        task.completed = Some(chrono::Utc::now());
-                    } else {
-                        task.completed = None;
+                    gtk::Separator {
+                        set_orientation: gtk::Orientation::Vertical,
+                    },
+
+                    // Main Tasks Grid
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_hexpand: true,
+                        set_margin_all: 16,
+                        set_spacing: 12,
+
+                        // Add Task Entry Bar
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Horizontal,
+                            set_spacing: 8,
+
+                            gtk::Entry {
+                                set_hexpand: true,
+                                set_placeholder_text: Some("Add a task..."),
+                            },
+
+                            gtk::Button {
+                                set_label: "Add Task",
+                                add_css_class: "flat",
+                            }
+                        },
+
+                        gtk::ScrolledWindow {
+                            set_vexpand: true,
+                            #[wrap(Some)]
+                            set_child = &gtk::ListBox {
+                                add_css_class: "boxed-list",
+                            }
+                        }
                     }
                 }
-                task.updated = Some(chrono::Utc::now());
-                task.is_dirty = true;
-
-                let _ = state.db.save_tasks(&[task.clone()]);
-                return (
-                    StatusCode::OK,
-                    Json(ApiResponse {
-                        success: true,
-                        data: Some(true),
-                        error: None,
-                    }),
-                );
             }
         }
     }
 
-    (
-        StatusCode::NOT_FOUND,
-        Json(ApiResponse {
-            success: false,
-            data: None,
-            error: Some("Task not found".to_string()),
-        }),
-    )
-}
+    fn init(
+        (client, db): Self::Init,
+        root: Self::Root,
+        sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
+        let lists = db.get_task_lists().unwrap_or_default();
+        let first_id = lists.first().map(|l| l.id.clone()).unwrap_or_default();
+        let tasks = db.get_tasks_for_list(&first_id).unwrap_or_default();
 
-async fn delete_task(
-    State(state): State<AppState>,
-    Path(task_id): Path<String>,
-) -> (StatusCode, Json<ApiResponse<bool>>) {
-    match state.db.delete_tasks_db(&[task_id]) {
-        Ok(_) => (
-            StatusCode::OK,
-            Json(ApiResponse {
-                success: true,
-                data: Some(true),
-                error: None,
-            }),
-        ),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiResponse {
-                success: false,
-                data: None,
-                error: Some(e.to_string()),
-            }),
-        ),
+        let model = AppModel {
+            client,
+            db,
+            task_lists: lists,
+            tasks,
+            selected_list_id: first_id,
+            status_message: "Ready".to_string(),
+        };
+
+        let widgets = view_output!();
+
+        ComponentParts { model, widgets }
+    }
+
+    fn update(&mut self, msg: Self::Input, sender: ComponentSender<Self>) {
+        match msg {
+            AppMsg::SelectList(list_id) => {
+                self.selected_list_id = list_id.clone();
+                if let Ok(tasks) = self.db.get_tasks_for_list(&list_id) {
+                    self.tasks = tasks;
+                }
+            }
+            AppMsg::ToggleTask(task_id, is_completed) => {
+                if let Some(task) = self.tasks.iter_mut().find(|t| t.id == task_id) {
+                    task.is_completed = is_completed;
+                    task.updated = Some(chrono::Utc::now());
+                    task.is_dirty = true;
+                    let _ = self.db.save_tasks(&[task.clone()]);
+                }
+            }
+            AppMsg::CreateTask(title) => {
+                if title.trim().is_empty() || self.selected_list_id.is_empty() {
+                    return;
+                }
+                let new_task = TaskLocal {
+                    id: String::new(),
+                    list_id: self.selected_list_id.clone(),
+                    title: Some(title),
+                    is_completed: false,
+                    notes: None,
+                    due: None,
+                    completed: None,
+                    parent: None,
+                    updated: Some(chrono::Utc::now()),
+                    is_dirty: true,
+                };
+                let _ = self.db.save_tasks(&[new_task]);
+                if let Ok(tasks) = self.db.get_tasks_for_list(&self.selected_list_id) {
+                    self.tasks = tasks;
+                }
+            }
+            AppMsg::CreateList(title) => {
+                let client = self.client.clone();
+                let db = self.db.clone();
+                tokio::spawn(async move {
+                    let mut client_mut = client;
+                    if let Ok(new_list) = client_mut.create_task_list(&title).await {
+                        let _ = db.save_task_lists(&[new_list]);
+                    }
+                });
+            }
+            AppMsg::SyncCloud => {
+                let mut client = self.client.clone();
+                let mut db = self.db.clone();
+                tokio::spawn(async move {
+                    let _ = crate::sync_local_to_db(&mut client, &mut db).await;
+                    let _ = crate::sync_remote_to_db(&mut client, &mut db).await;
+                    sender.input(AppMsg::SyncCompleted(Ok(())));
+                });
+            }
+            AppMsg::SyncCompleted(_) => {
+                if let Ok(tasks) = self.db.get_tasks_for_list(&self.selected_list_id) {
+                    self.tasks = tasks;
+                }
+                if let Ok(lists) = self.db.get_task_lists() {
+                    self.task_lists = lists;
+                }
+            }
+        }
     }
 }
 
-async fn sync_data(
-    State(state): State<AppState>,
-) -> (StatusCode, Json<ApiResponse<String>>) {
-    let mut client = state.client.lock().await;
-    let mut db = state.db.clone();
-
-    let _ = crate::sync_local_to_db(&mut client, &mut db).await;
-    let _ = crate::sync_remote_to_db(&mut client, &mut db).await;
-
-    (
-        StatusCode::OK,
-        Json(ApiResponse {
-            success: true,
-            data: Some("Synced successfully!".to_string()),
-            error: None,
-        }),
-    )
+/// Runs the native GTK4 & Libadwaita Linux Desktop Application
+pub fn run(
+    client: GoogleTasksClient,
+    db: Database,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let app = RelmApp::new("com.gtasks.desktop");
+    app.run::<AppModel>((client, db));
+    Ok(())
 }
