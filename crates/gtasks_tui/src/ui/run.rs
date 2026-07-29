@@ -8,8 +8,8 @@ use crossterm::{
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
-use gtasks_core::{sync_local_to_db, sync_remote_to_db, Database, GoogleTasksClient};
 use crate::ui::{App, EditAction, InputMode};
+use gtasks_core::{sync_local_to_db, sync_remote_to_db, Database, GoogleTasksClient};
 
 /// Main TUI Terminal Controller & Event Loop
 pub async fn run(
@@ -50,7 +50,8 @@ pub async fn run(
                                 app.switch_list();
                                 // Refresh displayed tasks when switching list selection
                                 if let Some(selected_list) = app.selected_list() {
-                                    if let Ok(list_tasks) = db.get_tasks_for_list(&selected_list.id) {
+                                    if let Ok(list_tasks) = db.get_tasks_for_list(&selected_list.id)
+                                    {
                                         app.tasks = list_tasks;
                                         app.selected_task_idx = 0;
                                     }
@@ -59,7 +60,8 @@ pub async fn run(
                             KeyCode::Up => {
                                 app.select_up();
                                 if let Some(selected_list) = app.selected_list() {
-                                    if let Ok(list_tasks) = db.get_tasks_for_list(&selected_list.id) {
+                                    if let Ok(list_tasks) = db.get_tasks_for_list(&selected_list.id)
+                                    {
                                         app.tasks = list_tasks;
                                     }
                                 }
@@ -67,7 +69,8 @@ pub async fn run(
                             KeyCode::Down => {
                                 app.select_down();
                                 if let Some(selected_list) = app.selected_list() {
-                                    if let Ok(list_tasks) = db.get_tasks_for_list(&selected_list.id) {
+                                    if let Ok(list_tasks) = db.get_tasks_for_list(&selected_list.id)
+                                    {
                                         app.tasks = list_tasks;
                                     }
                                 }
@@ -75,11 +78,13 @@ pub async fn run(
                             KeyCode::Char(' ') => {
                                 app.toggle_selected_task();
                                 if let Some(task) = app.selected_task() {
-                                    let _ = db.save_tasks(&[task.clone()]);
+                                    let _ = db.save_tasks(std::slice::from_ref(task));
                                 }
                             }
                             KeyCode::Char('c') => app.start_create_task(),
-                            KeyCode::Char('L') | KeyCode::Char('l') if app.active_pane == crate::ui::ActivePane::TaskLists => {
+                            KeyCode::Char('L') | KeyCode::Char('l')
+                                if app.active_pane == crate::ui::ActivePane::TaskLists =>
+                            {
                                 app.start_create_list();
                             }
                             KeyCode::Char('e') => app.start_edit_task(),
@@ -101,7 +106,9 @@ pub async fn run(
                                     app.task_lists = updated_lists;
                                 }
                                 if let Some(selected_list) = app.selected_list() {
-                                    if let Ok(updated_tasks) = db.get_tasks_for_list(&selected_list.id) {
+                                    if let Ok(updated_tasks) =
+                                        db.get_tasks_for_list(&selected_list.id)
+                                    {
                                         app.tasks = updated_tasks;
                                     }
                                 }
@@ -118,14 +125,19 @@ pub async fn run(
                                 if app.edit_action == EditAction::CreateList {
                                     let list_name = app.title_buffer.trim().to_string();
                                     if !list_name.is_empty() {
-                                        app.status_message = format!("Creating list '{}'...", list_name);
+                                        app.status_message =
+                                            format!("Creating list '{}'...", list_name);
                                         terminal.draw(|f| crate::ui::draw::draw(f, &app))?;
-                                        if let Ok(new_list) = client.create_task_list(&list_name).await {
-                                            let _ = db.save_task_lists(&[new_list.clone()]);
+                                        if let Ok(new_list) =
+                                            client.create_task_list(&list_name).await
+                                        {
+                                            let _ =
+                                                db.save_task_lists(std::slice::from_ref(&new_list));
                                             app.task_lists.push(new_list);
                                             app.selected_list_idx = app.task_lists.len() - 1;
                                             app.tasks.clear();
-                                            app.status_message = format!("Created Task List '{}' ✅", list_name);
+                                            app.status_message =
+                                                format!("Created Task List '{}' ✅", list_name);
                                         }
                                     }
                                     app.title_buffer.clear();
@@ -133,7 +145,7 @@ pub async fn run(
                                 } else {
                                     app.submit_input();
                                     if let Some(task) = app.selected_task() {
-                                        let _ = db.save_tasks(&[task.clone()]);
+                                        let _ = db.save_tasks(std::slice::from_ref(task));
                                     }
                                 }
                             }

@@ -153,7 +153,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
         } else {
             "Pending 🔲"
         };
-        let dirty_str = if selected.is_dirty { " | Unsynced ⚡" } else { "" };
+        let dirty_str = if selected.is_dirty {
+            " | Unsynced ⚡"
+        } else {
+            ""
+        };
 
         format!(
             " 📌 Title: {}\n 📝 Description: {}\n 📅 Due: {} | Status: {}{}",
@@ -224,19 +228,25 @@ pub fn draw(frame: &mut Frame, app: &App) {
                     .split(area);
 
                 let title_style = if app.edit_field == crate::ui::EditField::Title {
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::DarkGray)
                 };
 
                 let notes_style = if app.edit_field == crate::ui::EditField::Notes {
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::DarkGray)
                 };
 
                 let due_style = if app.edit_field == crate::ui::EditField::Due {
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::DarkGray)
                 };

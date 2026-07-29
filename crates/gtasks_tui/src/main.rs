@@ -27,9 +27,7 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     });
 
     // Step 4: Run TUI Interface
-    rt.block_on(async {
-        ui::run(&mut client, &mut db).await
-    })?;
+    rt.block_on(async { ui::run(&mut client, &mut db).await })?;
 
     println!("\n✨ Thank you for using gTasks!");
     Ok(())

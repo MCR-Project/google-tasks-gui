@@ -198,11 +198,15 @@ impl App {
 
     pub fn start_edit_task(&mut self) {
         if self.active_pane == ActivePane::Tasks {
-            let task_info = self.selected_task().map(|t| (
-                t.title.clone().unwrap_or_default(),
-                t.notes.clone().unwrap_or_default(),
-                t.due.map(|d| d.format("%Y-%m-%d").to_string()).unwrap_or_default(),
-            ));
+            let task_info = self.selected_task().map(|t| {
+                (
+                    t.title.clone().unwrap_or_default(),
+                    t.notes.clone().unwrap_or_default(),
+                    t.due
+                        .map(|d| d.format("%Y-%m-%d").to_string())
+                        .unwrap_or_default(),
+                )
+            });
 
             if let Some((title, notes, due)) = task_info {
                 self.title_buffer = title;
@@ -213,7 +217,8 @@ impl App {
                 self.edit_action = EditAction::EditTaskDetails;
                 self.edit_field = EditField::Title;
                 self.status_message =
-                    "Editing task details. Use [Tab] to switch fields, [Enter] to save...".to_string();
+                    "Editing task details. Use [Tab] to switch fields, [Enter] to save..."
+                        .to_string();
             }
         }
     }
@@ -235,6 +240,7 @@ impl App {
                             parent: None,
                             updated: Some(chrono::Utc::now()),
                             is_dirty: true,
+                            is_deleted: false,
                         };
                         self.tasks.push(new_task);
                         self.selected_task_idx = self.tasks.len() - 1;
@@ -259,7 +265,12 @@ impl App {
                     chrono::NaiveDate::parse_from_str(self.due_buffer.trim(), "%Y-%m-%d")
                         .ok()
                         .map(|nd| nd.and_hms_opt(0, 0, 0).unwrap())
-                        .map(|dt| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc))
+                        .map(|dt| {
+                            chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
+                                dt,
+                                chrono::Utc,
+                            )
+                        })
                 };
 
                 if let Some(task) = self.selected_task_mut() {
