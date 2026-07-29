@@ -1,0 +1,13 @@
+[package]
+name = "gtasks_gui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+gtasks_core = { path = "../gtasks_core" }
+
+relm4 = { version = "0.9", features = ["libadwaita"] }
+relm4-components = { version = "0.9", features = ["libadwaita"] }
+
+tokio = { version = "1", features = ["full"] }
+chrono = "0.4"

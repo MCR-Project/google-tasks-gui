@@ -2,5 +2,6 @@
 members = [
     "crates/gtasks_core",
     "crates/gtasks_tui",
+    "crates/gtasks_gui",
 ]
 resolver = "2"
