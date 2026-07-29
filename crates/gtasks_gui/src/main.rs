@@ -51,18 +51,28 @@ impl FactoryComponent for TaskListRow {
 struct TaskRow {
     id: String,
     title: String,
+    notes: Option<String>,
+    due_str: Option<String>,
+    parent: Option<String>,
+    is_subtask: bool,
     is_completed: bool,
 }
 
 struct TaskRowInit {
     id: String,
     title: String,
+    notes: Option<String>,
+    due_str: Option<String>,
+    parent: Option<String>,
+    is_subtask: bool,
     is_completed: bool,
 }
 
 #[derive(Debug)]
 enum TaskRowOutput {
     ToggleCompleted(DynamicIndex),
+    OpenDetails(String),
+    DeleteTask(String),
 }
 
 #[relm4::factory]
@@ -77,12 +87,43 @@ impl FactoryComponent for TaskRow {
         adw::ActionRow {
             #[watch]
             set_title: self.title.trim(),
+            #[watch]
+            set_subtitle: self.notes.as_deref().unwrap_or(""),
+            set_activatable: true,
+            set_margin_start: if self.is_subtask { 24 } else { 0 },
+            #[watch]
+            set_class_active: ("task-completed", self.is_completed),
 
-            add_prefix = &gtk::CheckButton {
-                #[watch]
-                set_active: self.is_completed,
-                connect_toggled[sender, index] => move |_| {
-                    let _ = sender.output(TaskRowOutput::ToggleCompleted(index.clone()));
+            connect_activated[sender, id = self.id.clone()] => move |_| {
+                let _ = sender.output(TaskRowOutput::OpenDetails(id.clone()));
+            },
+
+            add_prefix = &gtk::Box {
+                set_orientation: gtk::Orientation::Horizontal,
+                set_spacing: 4,
+
+                gtk::Image {
+                    set_icon_name: Some("corner-down-right-symbolic"),
+                    set_visible: self.is_subtask,
+                    set_opacity: 0.6,
+                },
+
+                gtk::CheckButton {
+                    add_css_class: "task-check",
+                    #[watch]
+                    set_active: self.is_completed,
+                    connect_toggled[sender, index] => move |_| {
+                        let _ = sender.output(TaskRowOutput::ToggleCompleted(index.clone()));
+                    }
+                },
+            },
+
+            add_suffix = &gtk::Button {
+                set_icon_name: "user-trash-symbolic",
+                add_css_class: "destructive-action",
+                set_valign: gtk::Align::Center,
+                connect_clicked[sender, id = self.id.clone()] => move |_| {
+                    let _ = sender.output(TaskRowOutput::DeleteTask(id.clone()));
                 }
             }
         }
@@ -92,7 +133,95 @@ impl FactoryComponent for TaskRow {
         TaskRow {
             id: init.id,
             title: init.title.trim().to_string(),
+            notes: init.notes,
+            due_str: init.due_str,
+            parent: init.parent,
+            is_subtask: init.is_subtask,
             is_completed: init.is_completed,
+        }
+    }
+}
+
+fn order_tasks_hierarchically(tasks: Vec<TaskLocal>) -> Vec<TaskLocal> {
+    let mut parent_map: std::collections::HashMap<Option<String>, Vec<TaskLocal>> =
+        std::collections::HashMap::new();
+
+    for task in tasks {
+        parent_map.entry(task.parent.clone()).or_default().push(task);
+    }
+
+    let mut ordered = Vec::new();
+    let root_tasks = parent_map.remove(&None).unwrap_or_default();
+
+    fn add_with_children(
+        task: TaskLocal,
+        parent_map: &mut std::collections::HashMap<Option<String>, Vec<TaskLocal>>,
+        ordered: &mut Vec<TaskLocal>,
+    ) {
+        let id = task.id.clone();
+        ordered.push(task);
+        if let Some(children) = parent_map.remove(&Some(id)) {
+            for child in children {
+                add_with_children(child, parent_map, ordered);
+            }
+        }
+    }
+
+    for root in root_tasks {
+        add_with_children(root, &mut parent_map, &mut ordered);
+    }
+
+    for (_parent, orphans) in parent_map {
+        for orphan in orphans {
+            ordered.push(orphan);
+        }
+    }
+
+    ordered
+}
+
+fn populate_task_guards(
+    tasks: Vec<TaskLocal>,
+    active_guard: &mut relm4::factory::FactoryVecDequeGuard<'_, TaskRow>,
+    completed_guard: &mut relm4::factory::FactoryVecDequeGuard<'_, TaskRow>,
+) {
+    active_guard.clear();
+    completed_guard.clear();
+
+    let ordered_tasks = order_tasks_hierarchically(tasks);
+
+    for task in ordered_tasks {
+        let clean_title = task
+            .title
+            .as_deref()
+            .map(|t| t.trim())
+            .filter(|t| !t.is_empty())
+            .unwrap_or("Untitled Task")
+            .to_string();
+
+        let due_str = task.due.map(|d| d.format("%Y-%m-%d").to_string());
+        let is_subtask = task.parent.is_some();
+
+        if task.is_completed {
+            completed_guard.push_back(TaskRowInit {
+                id: task.id,
+                title: clean_title,
+                notes: task.notes,
+                due_str,
+                parent: task.parent,
+                is_subtask,
+                is_completed: true,
+            });
+        } else {
+            active_guard.push_back(TaskRowInit {
+                id: task.id,
+                title: clean_title,
+                notes: task.notes,
+                due_str,
+                parent: task.parent,
+                is_subtask,
+                is_completed: false,
+            });
         }
     }
 }
@@ -104,14 +233,33 @@ struct AppModel {
     task_lists: Vec<TaskList>,
     task_list_factory: FactoryVecDeque<TaskListRow>,
     tasks: FactoryVecDeque<TaskRow>,
+    completed_tasks: FactoryVecDeque<TaskRow>,
     entry_buffer: gtk::EntryBuffer,
+    new_list_buffer: gtk::EntryBuffer,
+    show_new_list_entry: bool,
+    is_syncing: bool,
+    editing_task_id: Option<String>,
+    show_detail_window: bool,
+    detail_title_buffer: gtk::EntryBuffer,
+    detail_due_buffer: gtk::EntryBuffer,
+    detail_notes_buffer: gtk::TextBuffer,
 }
 
 #[derive(Debug)]
 enum AppInput {
     AddTask,
-    ToggleTask(DynamicIndex),
+    ToggleActiveTask(DynamicIndex),
+    MoveToCompleted(DynamicIndex),
+    ToggleCompletedTask(DynamicIndex),
+    DeleteTask(String),
+    OpenTaskDetails(String),
+    CloseTaskDetails,
+    SaveTaskDetails,
     SelectTaskList(String),
+    ToggleNewListEntry,
+    CreateTaskList,
+    SyncWithGoogle,
+    Refresh,
 }
 
 #[relm4::component]
@@ -125,16 +273,101 @@ impl SimpleComponent for AppModel {
             set_title: Some("Google Tasks"),
             set_default_size: (900, 600),
 
+            adw::Window {
+                set_title: Some("Task Details"),
+                set_default_size: (480, 360),
+                set_modal: true,
+                set_resizable: false,
+                #[watch]
+                set_visible: model.show_detail_window,
+
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+
+                    adw::HeaderBar {
+                        #[wrap(Some)]
+                        set_title_widget = &adw::WindowTitle {
+                            set_title: "Edit Task Details",
+                        },
+                        pack_start = &gtk::Button {
+                            set_label: "Cancel",
+                            connect_clicked => AppInput::CloseTaskDetails,
+                        },
+                        pack_end = &gtk::Button {
+                            set_label: "Save",
+                            add_css_class: "suggested-action",
+                            connect_clicked => AppInput::SaveTaskDetails,
+                        },
+                    },
+
+                    adw::PreferencesPage {
+                        adw::PreferencesGroup {
+                            set_title: "Task Information",
+
+                            adw::ActionRow {
+                                set_title: "Title",
+                                add_suffix = &gtk::Entry {
+                                    set_buffer: &model.detail_title_buffer,
+                                    set_valign: gtk::Align::Center,
+                                    set_hexpand: true,
+                                },
+                            },
+
+                            adw::ActionRow {
+                                set_title: "Due Date (YYYY-MM-DD)",
+                                add_suffix = &gtk::Entry {
+                                    set_buffer: &model.detail_due_buffer,
+                                    set_valign: gtk::Align::Center,
+                                    set_hexpand: true,
+                                },
+                            },
+                        },
+
+                        adw::PreferencesGroup {
+                            set_title: "Notes",
+
+                            gtk::ScrolledWindow {
+                                set_min_content_height: 120,
+                                set_margin_all: 6,
+
+                                gtk::TextView {
+                                    set_buffer: Some(&model.detail_notes_buffer),
+                                    set_wrap_mode: gtk::WrapMode::Word,
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+
             adw::Flap {
                 #[wrap(Some)]
                 set_flap = &gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
-                    set_width_request: 220,
+                    set_width_request: 240,
 
                     adw::HeaderBar {
                         #[wrap(Some)]
                         set_title_widget = &adw::WindowTitle {
                             set_title: "Task Lists",
+                        },
+                        pack_end = &gtk::Button {
+                            set_icon_name: "list-add-symbolic",
+                            set_tooltip_text: Some("Create new task list"),
+                            connect_clicked => AppInput::ToggleNewListEntry,
+                        },
+                    },
+
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        #[watch]
+                        set_visible: model.show_new_list_entry,
+
+                        gtk::Entry {
+                            set_placeholder_text: Some("New list name..."),
+                            set_margin_all: 6,
+                            set_buffer: &model.new_list_buffer,
+                            connect_activate => AppInput::CreateTaskList,
                         },
                     },
 
@@ -160,16 +393,53 @@ impl SimpleComponent for AppModel {
                             #[watch]
                             set_title: model.list_title.trim(),
                         },
+                        pack_end = &gtk::Box {
+                            set_orientation: gtk::Orientation::Horizontal,
+                            set_spacing: 6,
+
+                            gtk::Spinner {
+                                #[watch]
+                                set_spinning: model.is_syncing,
+                                #[watch]
+                                set_visible: model.is_syncing,
+                            },
+
+                            gtk::Button {
+                                set_icon_name: "view-refresh-symbolic",
+                                set_tooltip_text: Some("Sync with Google Tasks"),
+                                #[watch]
+                                set_sensitive: !model.is_syncing,
+                                connect_clicked => AppInput::SyncWithGoogle,
+                            },
+                        },
                     },
 
                     gtk::ScrolledWindow {
                         set_vexpand: true,
                         set_hexpand: true,
 
-                        #[local_ref]
-                        task_list_box -> gtk::ListBox {
-                            add_css_class: "boxed-list",
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
                             set_margin_all: 12,
+                            set_spacing: 12,
+
+                            #[local_ref]
+                            task_list_box -> gtk::ListBox {
+                                add_css_class: "boxed-list",
+                            },
+
+                            gtk::Expander {
+                                #[watch]
+                                set_label: Some(&format!("Completed ({})", model.completed_tasks.len())),
+                                #[watch]
+                                set_visible: !model.completed_tasks.is_empty(),
+
+                                #[local_ref]
+                                completed_task_list_box -> gtk::ListBox {
+                                    add_css_class: "boxed-list",
+                                    set_margin_top: 6,
+                                },
+                            },
                         },
                     },
 
@@ -208,7 +478,6 @@ impl SimpleComponent for AppModel {
         if let Some(ref db) = db {
             match db.get_task_lists() {
                 Ok(lists) => {
-                    println!("[GUI DB LOG] Lists found: {:?}", lists);
                     if let Some(first_list) = lists.first() {
                         list_id = first_list.id.clone();
                         list_title = first_list.title.clone();
@@ -219,24 +488,21 @@ impl SimpleComponent for AppModel {
                             title: list_title.clone(),
                             updated: None,
                         };
-                        if let Err(err) = db.save_task_lists(&[default_list.clone()]) {
-                            eprintln!("[GUI DB LOG] Error saving default list: {:?}", err);
-                        }
+                        let _ = db.save_task_lists(std::slice::from_ref(&default_list));
                         task_lists = vec![default_list];
                     }
                 }
                 Err(err) => {
-                    eprintln!("[GUI DB LOG] Error fetching task lists: {:?}", err);
+                    eprintln!("Error fetching task lists: {:?}", err);
                 }
             }
 
             match db.get_tasks_for_list(&list_id) {
                 Ok(tasks) => {
-                    println!("[GUI DB LOG] Tasks found for list {}: {:?}", list_id, tasks);
                     initial_tasks = tasks;
                 }
                 Err(err) => {
-                    eprintln!("[GUI DB LOG] Error fetching tasks for list {}: {:?}", list_id, err);
+                    eprintln!("Error fetching tasks for list {}: {:?}", list_id, err);
                 }
             }
         }
@@ -260,30 +526,30 @@ impl SimpleComponent for AppModel {
         let mut tasks = FactoryVecDeque::builder()
             .launch(gtk::ListBox::default())
             .forward(sender.input_sender(), |output| match output {
-                TaskRowOutput::ToggleCompleted(index) => AppInput::ToggleTask(index),
+                TaskRowOutput::ToggleCompleted(index) => AppInput::ToggleActiveTask(index),
+                TaskRowOutput::OpenDetails(id) => AppInput::OpenTaskDetails(id),
+                TaskRowOutput::DeleteTask(id) => AppInput::DeleteTask(id),
+            });
+
+        let mut completed_tasks = FactoryVecDeque::builder()
+            .launch(gtk::ListBox::default())
+            .forward(sender.input_sender(), |output| match output {
+                TaskRowOutput::ToggleCompleted(index) => AppInput::ToggleCompletedTask(index),
+                TaskRowOutput::OpenDetails(id) => AppInput::OpenTaskDetails(id),
+                TaskRowOutput::DeleteTask(id) => AppInput::DeleteTask(id),
             });
 
         {
-            let mut guard = tasks.guard();
-            guard.clear();
-            for task in initial_tasks {
-                let clean_title = task
-                    .title
-                    .as_deref()
-                    .map(|t| t.trim())
-                    .filter(|t| !t.is_empty())
-                    .unwrap_or("Untitled Task")
-                    .to_string();
-
-                guard.push_back(TaskRowInit {
-                    id: task.id,
-                    title: clean_title,
-                    is_completed: task.is_completed,
-                });
-            }
+            let mut active_guard = tasks.guard();
+            let mut completed_guard = completed_tasks.guard();
+            populate_task_guards(initial_tasks, &mut active_guard, &mut completed_guard);
         }
 
         let entry_buffer = gtk::EntryBuffer::default();
+        let new_list_buffer = gtk::EntryBuffer::default();
+        let detail_title_buffer = gtk::EntryBuffer::default();
+        let detail_due_buffer = gtk::EntryBuffer::default();
+        let detail_notes_buffer = gtk::TextBuffer::default();
 
         let model = AppModel {
             db,
@@ -292,7 +558,16 @@ impl SimpleComponent for AppModel {
             task_lists,
             task_list_factory,
             tasks,
+            completed_tasks,
             entry_buffer,
+            new_list_buffer,
+            show_new_list_entry: false,
+            is_syncing: false,
+            editing_task_id: None,
+            show_detail_window: false,
+            detail_title_buffer,
+            detail_due_buffer,
+            detail_notes_buffer,
         };
 
         let sidebar_list_box = model.task_list_factory.widget();
@@ -301,13 +576,279 @@ impl SimpleComponent for AppModel {
         }
 
         let task_list_box = model.tasks.widget();
+        let completed_task_list_box = model.completed_tasks.widget();
         let widgets = view_output!();
 
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, message: Self::Input, _sender: ComponentSender<Self>) {
+    fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
         match message {
+            AppInput::OpenTaskDetails(id) => {
+                self.editing_task_id = Some(id.clone());
+                let mut title = String::new();
+                let mut notes = String::new();
+                let mut due_str = String::new();
+
+                if let Some(ref db) = self.db {
+                    if let Ok(tasks) = db.get_tasks_for_list(&self.list_id) {
+                        if let Some(task) = tasks.iter().find(|t| t.id == id) {
+                            title = task.title.as_deref().unwrap_or("").to_string();
+                            notes = task.notes.as_deref().unwrap_or("").to_string();
+                            due_str = task
+                                .due
+                                .map(|d| d.format("%Y-%m-%d").to_string())
+                                .unwrap_or_default();
+                        }
+                    }
+                }
+
+                self.detail_title_buffer.set_text(&title);
+                self.detail_due_buffer.set_text(&due_str);
+                self.detail_notes_buffer.set_text(&notes);
+                self.show_detail_window = true;
+            }
+            AppInput::CloseTaskDetails => {
+                self.show_detail_window = false;
+                self.editing_task_id = None;
+            }
+            AppInput::SaveTaskDetails => {
+                if let Some(id) = self.editing_task_id.take() {
+                    let title_text = self.detail_title_buffer.text().to_string();
+                    let title_trimmed = title_text.trim().to_string();
+                    let notes_text = self
+                        .detail_notes_buffer
+                        .text(
+                            &self.detail_notes_buffer.start_iter(),
+                            &self.detail_notes_buffer.end_iter(),
+                            false,
+                        )
+                        .to_string();
+                    let notes_trimmed = notes_text.trim().to_string();
+                    let due_text = self.detail_due_buffer.text().to_string();
+                    let due_trimmed = due_text.trim();
+
+                    let due_dt = chrono::NaiveDate::parse_from_str(due_trimmed, "%Y-%m-%d")
+                        .ok()
+                        .map(|nd| nd.and_hms_opt(0, 0, 0).unwrap())
+                        .map(|dt| {
+                            chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
+                                dt,
+                                chrono::Utc,
+                            )
+                        });
+
+                    let mut is_completed_status = false;
+                    let mut parent_id = None;
+
+                    if let Some(ref db) = self.db {
+                        if let Ok(tasks) = db.get_tasks_for_list(&self.list_id) {
+                            if let Some(task) = tasks.iter().find(|t| t.id == id) {
+                                is_completed_status = task.is_completed;
+                                parent_id = task.parent.clone();
+                            }
+                        }
+
+                        let updated_task = TaskLocal {
+                            id: id.clone(),
+                            list_id: self.list_id.clone(),
+                            title: if title_trimmed.is_empty() {
+                                None
+                            } else {
+                                Some(title_trimmed.clone())
+                            },
+                            is_completed: is_completed_status,
+                            notes: if notes_trimmed.is_empty() {
+                                None
+                            } else {
+                                Some(notes_trimmed.clone())
+                            },
+                            due: due_dt,
+                            completed: if is_completed_status {
+                                Some(chrono::Utc::now())
+                            } else {
+                                None
+                            },
+                            parent: parent_id,
+                            updated: Some(chrono::Utc::now()),
+                            is_dirty: true,
+                            is_deleted: false,
+                        };
+
+                        if let Err(err) = db.save_tasks(&[updated_task]) {
+                            eprintln!("Failed to save task details to SQLite: {}", err);
+                        }
+                    }
+
+                    let due_str_formatted = due_dt.map(|d| d.format("%Y-%m-%d").to_string());
+                    let notes_opt = if notes_trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(notes_trimmed)
+                    };
+                    let title_clean = if title_trimmed.is_empty() {
+                        "Untitled Task".to_string()
+                    } else {
+                        title_trimmed
+                    };
+
+                    let active_pos = self.tasks.guard().iter().position(|r| r.id == id);
+                    if let Some(pos) = active_pos {
+                        let mut guard = self.tasks.guard();
+                        if let Some(row) = guard.get_mut(pos) {
+                            row.title = title_clean.clone();
+                            row.notes = notes_opt.clone();
+                            row.due_str = due_str_formatted.clone();
+                        }
+                    }
+
+                    let completed_pos =
+                        self.completed_tasks.guard().iter().position(|r| r.id == id);
+                    if let Some(pos) = completed_pos {
+                        let mut guard = self.completed_tasks.guard();
+                        if let Some(row) = guard.get_mut(pos) {
+                            row.title = title_clean;
+                            row.notes = notes_opt;
+                            row.due_str = due_str_formatted;
+                        }
+                    }
+
+                    self.show_detail_window = false;
+                    sender.input(AppInput::SyncWithGoogle);
+                }
+            }
+            AppInput::DeleteTask(id) => {
+                if let Some(ref db) = self.db {
+                    if let Err(err) = db.mark_task_deleted(&id) {
+                        eprintln!("Failed to mark task deleted in SQLite: {}", err);
+                    }
+                }
+
+                let active_pos = self.tasks.guard().iter().position(|r| r.id == id);
+                if let Some(pos) = active_pos {
+                    self.tasks.guard().remove(pos);
+                }
+
+                let completed_pos = self.completed_tasks.guard().iter().position(|r| r.id == id);
+                if let Some(pos) = completed_pos {
+                    self.completed_tasks.guard().remove(pos);
+                }
+
+                sender.input(AppInput::SyncWithGoogle);
+            }
+            AppInput::SyncWithGoogle => {
+                if self.is_syncing {
+                    return;
+                }
+                self.is_syncing = true;
+
+                let sender_input = sender.input_sender().clone();
+                relm4::spawn(async move {
+                    println!("🔄 Starting background sync with Google Tasks API...");
+                    if let Ok(mut client) = gtasks_core::obtain_authenticated_client().await {
+                        let mut db = match Database::new("task_lists.db") {
+                            Ok(db) => db,
+                            Err(err) => {
+                                eprintln!("Failed to open DB for sync: {}", err);
+                                let _ = sender_input.send(AppInput::Refresh);
+                                return;
+                            }
+                        };
+
+                        if let Err(err) = gtasks_core::sync_local_to_db(&mut client, &mut db).await
+                        {
+                            eprintln!("Error in sync_local_to_db: {}", err);
+                        }
+                        if let Err(err) = gtasks_core::sync_remote_to_db(&mut client, &mut db).await
+                        {
+                            eprintln!("Error in sync_remote_to_db: {}", err);
+                        }
+                    } else {
+                        eprintln!("Failed to obtain authenticated client for sync");
+                    }
+
+                    let _ = sender_input.send(AppInput::Refresh);
+                });
+            }
+            AppInput::Refresh => {
+                self.is_syncing = false;
+
+                if let Some(ref db) = self.db {
+                    if let Ok(lists) = db.get_task_lists() {
+                        self.task_lists = lists.clone();
+                        let mut guard = self.task_list_factory.guard();
+                        guard.clear();
+                        for list in &lists {
+                            guard.push_back(TaskListRowInit {
+                                id: list.id.clone(),
+                                title: list.title.trim().to_string(),
+                            });
+                        }
+
+                        if !lists.iter().any(|l| l.id == self.list_id) {
+                            if let Some(first) = lists.first() {
+                                self.list_id = first.id.clone();
+                                self.list_title = first.title.trim().to_string();
+                            }
+                        } else if let Some(found) = lists.iter().find(|l| l.id == self.list_id) {
+                            self.list_title = found.title.trim().to_string();
+                        }
+                    }
+
+                    let new_tasks = match db.get_tasks_for_list(&self.list_id) {
+                        Ok(tasks) => tasks,
+                        Err(err) => {
+                            eprintln!(
+                                "Failed to fetch tasks on refresh for list {}: {}",
+                                self.list_id, err
+                            );
+                            Vec::new()
+                        }
+                    };
+
+                    let mut active_guard = self.tasks.guard();
+                    let mut completed_guard = self.completed_tasks.guard();
+                    populate_task_guards(new_tasks, &mut active_guard, &mut completed_guard);
+                }
+            }
+            AppInput::ToggleNewListEntry => {
+                self.show_new_list_entry = !self.show_new_list_entry;
+            }
+            AppInput::CreateTaskList => {
+                let title = self.new_list_buffer.text().to_string();
+                let trimmed = title.trim();
+                if !trimmed.is_empty() {
+                    let new_id = format!(
+                        "list_{}",
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis()
+                    );
+                    let new_list = TaskList {
+                        id: new_id.clone(),
+                        title: trimmed.to_string(),
+                        updated: Some(chrono::Utc::now().to_rfc3339()),
+                    };
+
+                    if let Some(ref db) = self.db {
+                        if let Err(err) = db.save_task_lists(std::slice::from_ref(&new_list)) {
+                            eprintln!("Failed to save new task list to SQLite: {}", err);
+                        }
+                    }
+
+                    self.task_lists.push(new_list);
+                    self.task_list_factory.guard().push_back(TaskListRowInit {
+                        id: new_id.clone(),
+                        title: trimmed.to_string(),
+                    });
+
+                    self.new_list_buffer.set_text("");
+                    self.show_new_list_entry = false;
+
+                    sender.input(AppInput::SelectTaskList(new_id));
+                }
+            }
             AppInput::SelectTaskList(selected_id) => {
                 self.list_id = selected_id.clone();
                 if let Some(list) = self.task_lists.iter().find(|l| l.id == selected_id) {
@@ -330,33 +871,22 @@ impl SimpleComponent for AppModel {
                         }
                     };
 
-                    let mut guard = self.tasks.guard();
-                    guard.clear();
-                    for task in new_tasks {
-                        let clean_title = task
-                            .title
-                            .as_deref()
-                            .map(|t| t.trim())
-                            .filter(|t| !t.is_empty())
-                            .unwrap_or("Untitled Task")
-                            .to_string();
-
-                        guard.push_back(TaskRowInit {
-                            id: task.id,
-                            title: clean_title,
-                            is_completed: task.is_completed,
-                        });
-                    }
+                    let mut active_guard = self.tasks.guard();
+                    let mut completed_guard = self.completed_tasks.guard();
+                    populate_task_guards(new_tasks, &mut active_guard, &mut completed_guard);
                 }
             }
             AppInput::AddTask => {
                 let text = self.entry_buffer.text().to_string();
                 let trimmed = text.trim();
                 if !trimmed.is_empty() {
-                    let task_id = format!("local_{}", std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis());
+                    let task_id = format!(
+                        "local_{}",
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis()
+                    );
 
                     let task_local = TaskLocal {
                         id: task_id.clone(),
@@ -369,6 +899,7 @@ impl SimpleComponent for AppModel {
                         parent: None,
                         updated: Some(chrono::Utc::now()),
                         is_dirty: true,
+                        is_deleted: false,
                     };
 
                     if let Some(ref db) = self.db {
@@ -380,13 +911,17 @@ impl SimpleComponent for AppModel {
                     self.tasks.guard().push_back(TaskRowInit {
                         id: task_id,
                         title: trimmed.to_string(),
+                        notes: None,
+                        due_str: None,
+                        parent: None,
+                        is_subtask: false,
                         is_completed: false,
                     });
 
                     self.entry_buffer.set_text("");
                 }
             }
-            AppInput::ToggleTask(index) => {
+            AppInput::ToggleActiveTask(index) => {
                 let idx = index.current_index();
                 let mut guard = self.tasks.guard();
                 if let Some(row) = guard.get_mut(idx) {
@@ -394,6 +929,8 @@ impl SimpleComponent for AppModel {
                     let task_id = row.id.clone();
                     let is_completed = row.is_completed;
                     let title = row.title.trim().to_string();
+                    let notes = row.notes.clone();
+                    let parent = row.parent.clone();
 
                     if let Some(ref db) = self.db {
                         let updated_task = TaskLocal {
@@ -401,17 +938,102 @@ impl SimpleComponent for AppModel {
                             list_id: self.list_id.clone(),
                             title: Some(title),
                             is_completed,
-                            notes: None,
+                            notes,
                             due: None,
-                            completed: if is_completed { Some(chrono::Utc::now()) } else { None },
-                            parent: None,
+                            completed: if is_completed {
+                                Some(chrono::Utc::now())
+                            } else {
+                                None
+                            },
+                            parent,
                             updated: Some(chrono::Utc::now()),
                             is_dirty: true,
+                            is_deleted: false,
                         };
                         if let Err(err) = db.save_tasks(&[updated_task]) {
                             eprintln!("Failed to update task completion in SQLite: {}", err);
                         }
                     }
+
+                    if is_completed {
+                        let sender_input = sender.input_sender().clone();
+                        let idx_clone = index.clone();
+                        relm4::gtk::glib::timeout_add_local(
+                            std::time::Duration::from_secs(3),
+                            move || {
+                                let _ =
+                                    sender_input.send(AppInput::MoveToCompleted(idx_clone.clone()));
+                                relm4::gtk::glib::ControlFlow::Break
+                            },
+                        );
+                    }
+                }
+            }
+            AppInput::MoveToCompleted(index) => {
+                let idx = index.current_index();
+                let mut active_guard = self.tasks.guard();
+                if let Some(row) = active_guard.get(idx) {
+                    if row.is_completed {
+                        let task_id = row.id.clone();
+                        let title = row.title.clone();
+                        let notes = row.notes.clone();
+                        let due_str = row.due_str.clone();
+                        let parent = row.parent.clone();
+                        let is_subtask = row.is_subtask;
+                        active_guard.remove(idx);
+
+                        self.completed_tasks.guard().push_back(TaskRowInit {
+                            id: task_id,
+                            title,
+                            notes,
+                            due_str,
+                            parent,
+                            is_subtask,
+                            is_completed: true,
+                        });
+                    }
+                }
+            }
+            AppInput::ToggleCompletedTask(index) => {
+                let idx = index.current_index();
+                let mut completed_guard = self.completed_tasks.guard();
+                if let Some(row) = completed_guard.get(idx) {
+                    let task_id = row.id.clone();
+                    let title = row.title.clone();
+                    let notes = row.notes.clone();
+                    let due_str = row.due_str.clone();
+                    let parent = row.parent.clone();
+                    let is_subtask = row.is_subtask;
+                    completed_guard.remove(idx);
+
+                    if let Some(ref db) = self.db {
+                        let updated_task = TaskLocal {
+                            id: task_id.clone(),
+                            list_id: self.list_id.clone(),
+                            title: Some(title.clone()),
+                            is_completed: false,
+                            notes: notes.clone(),
+                            due: None,
+                            completed: None,
+                            parent: parent.clone(),
+                            updated: Some(chrono::Utc::now()),
+                            is_dirty: true,
+                            is_deleted: false,
+                        };
+                        if let Err(err) = db.save_tasks(&[updated_task]) {
+                            eprintln!("Failed to update task uncompleted state in SQLite: {}", err);
+                        }
+                    }
+
+                    self.tasks.guard().push_back(TaskRowInit {
+                        id: task_id,
+                        title,
+                        notes,
+                        due_str,
+                        parent,
+                        is_subtask,
+                        is_completed: false,
+                    });
                 }
             }
         }
@@ -419,8 +1041,20 @@ impl SimpleComponent for AppModel {
 }
 
 fn main() {
+    dotenvy::dotenv().ok();
     let app = RelmApp::new("com.example.gtasks");
+    relm4::set_global_css(
+        "
+        .task-completed {
+            text-decoration: line-through;
+            opacity: 0.5;
+            transition: opacity 300ms ease-in-out;
+        }
+        .task-check {
+            min-width: 44px;
+            min-height: 44px;
+        }
+        ",
+    );
     app.run::<AppModel>(());
 }
-
-
