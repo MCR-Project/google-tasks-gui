@@ -1,7 +1,6 @@
 mod api;
 mod auth;
 mod db;
-mod gui;
 mod ui;
 
 use api::{GoogleTasksClient, TaskLocal};
@@ -11,14 +10,7 @@ use std::error::Error;
 fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     dotenvy::dotenv().ok();
 
-    let args: Vec<String> = std::env::args().collect();
-    let is_tui_mode = args.contains(&"--tui".to_string());
-
-    if is_tui_mode {
-        println!("🚀 Starting gTasks Terminal TUI...\n");
-    } else {
-        println!("🚀 Starting gTasks Native GTK4 Libadwaita App...\n");
-    }
+    println!("🚀 Starting gTasks Terminal TUI...\n");
 
     let rt = tokio::runtime::Runtime::new()?;
 
@@ -36,14 +28,10 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         let _ = sync_local_to_db(&mut client, &mut db).await;
     });
 
-    // Step 4: Run selected Interface (GUI or TUI)
-    if is_tui_mode {
-        rt.block_on(async {
-            ui::run(&mut client, &mut db).await
-        })?;
-    } else {
-        gui::run(client, db)?;
-    }
+    // Step 4: Run TUI Interface
+    rt.block_on(async {
+        ui::run(&mut client, &mut db).await
+    })?;
 
     println!("\n✨ Thank you for using gTasks!");
     Ok(())

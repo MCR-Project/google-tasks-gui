@@ -21,8 +21,8 @@ While Google Tasks is widely used across mobile and web, Linux lacks a modern, h
 
 ```text
                ┌─────────────────────────────────────────────────┐
-               │             Desktop Application                 │
-               │   (Tauri 2.0 / GTK4 Libadwaita Interface)       │
+               │         Terminal User Interface (TUI)           │
+               │             (Ratatui / Crossterm)               │
                └────────────────────────┬────────────────────────┘
                                         │
                                         ▼
@@ -48,7 +48,7 @@ While Google Tasks is widely used across mobile and web, Linux lacks a modern, h
 * [x] **Tech Stack Selection:** Rust + Tokio + Reqwest backend.
 * [x] **Local Storage Design:** SQLite via `sqlx` / `rusqlite` for offline-first data persistence.
 * [x] **Authentication Flow:** OAuth 2.0 Authorization Code Flow with PKCE.
-* [x] **UI Framework Target:** Tauri 2.0 (HTML/Tailwind UI) or Relm4 (Native GTK4).
+* [x] **UI Framework Target:** Ratatui + Crossterm (TUI).
 
 ---
 

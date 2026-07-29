@@ -21,6 +21,4 @@ chrono = { version = "0.4.45", features = ["serde"] }
 ratatui = "0.30.2"
 crossterm = "0.29.0"
 futures = "0.3"
-relm4 = "0.9"
-libadwaita = { version = "0.7", features = ["v1_4"] }
 
