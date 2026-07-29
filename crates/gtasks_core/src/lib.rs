@@ -53,10 +53,8 @@ pub async fn sync_remote_to_db(
 
     let results = join_all(fetch_futures).await;
 
-    for res in results {
-        if let Ok(local_tasks) = res {
-            db.save_tasks(&local_tasks)?;
-        }
+    for local_tasks in results.into_iter().flatten() {
+        db.save_tasks(&local_tasks)?;
     }
 
     Ok(())

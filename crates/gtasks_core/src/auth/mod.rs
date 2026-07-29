@@ -80,7 +80,7 @@ pub async fn authenticate() -> Result<TokenResponse, Box<dyn std::error::Error +
 
     let (mut socket, _) = listener.accept().await?;
     let mut buffer = [0; 2048];
-    socket.read(&mut buffer).await?;
+    let _ = socket.read(&mut buffer).await?;
     let request_str = String::from_utf8_lossy(&buffer);
 
     // Extract the authorization code and state from the request
@@ -88,7 +88,7 @@ pub async fn authenticate() -> Result<TokenResponse, Box<dyn std::error::Error +
         .ok_or("Failed to extract authorization code from browser callback")?;
 
     if returned_state != pkce.state {
-        return Err("OAuth State mismatch")?;
+        return Err("OAuth State mismatch".into());
     }
 
     let http_response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<html><body><h1>Authentication successful! You can close this window.</h1></body></html>";
