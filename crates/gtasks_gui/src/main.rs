@@ -1,10 +1,12 @@
 use gtasks_core::api::{TaskList, TaskLocal};
 use gtasks_core::db::Database;
+use gtasks_core::sync::{SyncEvent, SyncManager};
 use relm4::adw;
 use relm4::adw::prelude::*;
 use relm4::factory::FactoryVecDeque;
 use relm4::gtk;
 use relm4::prelude::*;
+use std::sync::Arc;
 
 struct TaskListRow {
     id: String,
@@ -32,11 +34,11 @@ impl FactoryComponent for TaskListRow {
     view! {
         adw::ActionRow {
             #[watch]
-            set_title: self.title.trim(),
+            set_title: &relm4::gtk::glib::markup_escape_text(self.title.trim()),
             set_activatable: true,
             connect_activated[sender, id = self.id.clone()] => move |_| {
                 let _ = sender.output(TaskListRowOutput::Select(id.clone()));
-            }
+            },
         }
     }
 
@@ -72,7 +74,6 @@ struct TaskRowInit {
 enum TaskRowOutput {
     ToggleCompleted(DynamicIndex),
     OpenDetails(String),
-    DeleteTask(String),
 }
 
 #[relm4::factory]
@@ -86,9 +87,9 @@ impl FactoryComponent for TaskRow {
     view! {
         adw::ActionRow {
             #[watch]
-            set_title: self.title.trim(),
+            set_title: &relm4::gtk::glib::markup_escape_text(self.title.trim()),
             #[watch]
-            set_subtitle: self.notes.as_deref().unwrap_or(""),
+            set_subtitle: &relm4::gtk::glib::markup_escape_text(self.notes.as_deref().unwrap_or("")),
             set_activatable: true,
             set_margin_start: if self.is_subtask { 24 } else { 0 },
             #[watch]
@@ -117,15 +118,6 @@ impl FactoryComponent for TaskRow {
                     }
                 },
             },
-
-            add_suffix = &gtk::Button {
-                set_icon_name: "user-trash-symbolic",
-                add_css_class: "destructive-action",
-                set_valign: gtk::Align::Center,
-                connect_clicked[sender, id = self.id.clone()] => move |_| {
-                    let _ = sender.output(TaskRowOutput::DeleteTask(id.clone()));
-                }
-            }
         }
     }
 
@@ -228,6 +220,7 @@ fn populate_task_guards(
 
 struct AppModel {
     db: Option<Database>,
+    sync_manager: Arc<SyncManager>,
     list_id: String,
     list_title: String,
     task_lists: Vec<TaskList>,
@@ -252,13 +245,17 @@ enum AppInput {
     MoveToCompleted(DynamicIndex),
     ToggleCompletedTask(DynamicIndex),
     DeleteTask(String),
+    DeleteList(String),
     OpenTaskDetails(String),
     CloseTaskDetails,
     SaveTaskDetails,
+    DeleteCurrentTaskDetails,
+    DeleteCurrentList,
     SelectTaskList(String),
     ToggleNewListEntry,
     CreateTaskList,
     SyncWithGoogle,
+    SetSyncing(bool),
     Refresh,
 }
 
@@ -272,6 +269,9 @@ impl SimpleComponent for AppModel {
         adw::ApplicationWindow {
             set_title: Some("Google Tasks"),
             set_default_size: (900, 600),
+            connect_is_active_notify[sync_manager = model.sync_manager.clone()] => move |win| {
+                sync_manager.set_window_active(win.is_active());
+            },
 
             adw::Window {
                 set_title: Some("Task Details"),
@@ -336,6 +336,20 @@ impl SimpleComponent for AppModel {
                                 },
                             },
                         },
+
+                        adw::PreferencesGroup {
+                            set_title: "Actions",
+
+                            adw::ActionRow {
+                                set_title: "Delete Task",
+                                add_suffix = &gtk::Button {
+                                    set_label: "Delete",
+                                    add_css_class: "destructive-action",
+                                    set_valign: gtk::Align::Center,
+                                    connect_clicked => AppInput::DeleteCurrentTaskDetails,
+                                },
+                            },
+                        },
                     },
                 },
             },
@@ -347,6 +361,8 @@ impl SimpleComponent for AppModel {
                     set_width_request: 240,
 
                     adw::HeaderBar {
+                        set_show_start_title_buttons: false,
+                        set_show_end_title_buttons: false,
                         #[wrap(Some)]
                         set_title_widget = &adw::WindowTitle {
                             set_title: "Task Lists",
@@ -391,7 +407,7 @@ impl SimpleComponent for AppModel {
                         #[wrap(Some)]
                         set_title_widget = &adw::WindowTitle {
                             #[watch]
-                            set_title: model.list_title.trim(),
+                            set_title: &relm4::gtk::glib::markup_escape_text(model.list_title.trim()),
                         },
                         pack_end = &gtk::Box {
                             set_orientation: gtk::Orientation::Horizontal,
@@ -411,6 +427,26 @@ impl SimpleComponent for AppModel {
                                 set_sensitive: !model.is_syncing,
                                 connect_clicked => AppInput::SyncWithGoogle,
                             },
+
+                            gtk::Button {
+                                set_icon_name: "user-trash-symbolic",
+                                set_tooltip_text: Some("Delete active task list"),
+                                connect_clicked => AppInput::DeleteCurrentList,
+                            },
+                        },
+                    },
+
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_margin_start: 12,
+                        set_margin_end: 12,
+                        set_margin_top: 12,
+                        set_margin_bottom: 4,
+
+                        gtk::Entry {
+                            set_placeholder_text: Some("➕ Add a new task... (press Enter)"),
+                            set_buffer: &model.entry_buffer,
+                            connect_activate => AppInput::AddTask,
                         },
                     },
 
@@ -441,13 +477,6 @@ impl SimpleComponent for AppModel {
                                 },
                             },
                         },
-                    },
-
-                    gtk::Entry {
-                        set_placeholder_text: Some("New task..."),
-                        set_margin_all: 12,
-                        set_buffer: &model.entry_buffer,
-                        connect_activate => AppInput::AddTask,
                     },
                 },
             },
@@ -528,7 +557,6 @@ impl SimpleComponent for AppModel {
             .forward(sender.input_sender(), |output| match output {
                 TaskRowOutput::ToggleCompleted(index) => AppInput::ToggleActiveTask(index),
                 TaskRowOutput::OpenDetails(id) => AppInput::OpenTaskDetails(id),
-                TaskRowOutput::DeleteTask(id) => AppInput::DeleteTask(id),
             });
 
         let mut completed_tasks = FactoryVecDeque::builder()
@@ -536,7 +564,6 @@ impl SimpleComponent for AppModel {
             .forward(sender.input_sender(), |output| match output {
                 TaskRowOutput::ToggleCompleted(index) => AppInput::ToggleCompletedTask(index),
                 TaskRowOutput::OpenDetails(id) => AppInput::OpenTaskDetails(id),
-                TaskRowOutput::DeleteTask(id) => AppInput::DeleteTask(id),
             });
 
         {
@@ -544,6 +571,25 @@ impl SimpleComponent for AppModel {
             let mut completed_guard = completed_tasks.guard();
             populate_task_guards(initial_tasks, &mut active_guard, &mut completed_guard);
         }
+
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(32);
+        let sync_manager = SyncManager::spawn(event_tx);
+
+        let sender_clone = sender.clone();
+        relm4::spawn(async move {
+            while let Some(event) = event_rx.recv().await {
+                match event {
+                    SyncEvent::SyncStarted { is_manual } => {
+                        if is_manual {
+                            sender_clone.input(AppInput::SetSyncing(true));
+                        }
+                    }
+                    SyncEvent::SyncFinished(_res) => {
+                        sender_clone.input(AppInput::Refresh);
+                    }
+                }
+            }
+        });
 
         let entry_buffer = gtk::EntryBuffer::default();
         let new_list_buffer = gtk::EntryBuffer::default();
@@ -553,6 +599,7 @@ impl SimpleComponent for AppModel {
 
         let model = AppModel {
             db,
+            sync_manager,
             list_id,
             list_title,
             task_lists,
@@ -611,6 +658,16 @@ impl SimpleComponent for AppModel {
             AppInput::CloseTaskDetails => {
                 self.show_detail_window = false;
                 self.editing_task_id = None;
+            }
+            AppInput::DeleteCurrentTaskDetails => {
+                if let Some(id) = self.editing_task_id.take() {
+                    self.show_detail_window = false;
+                    sender.input(AppInput::DeleteTask(id));
+                }
+            }
+            AppInput::DeleteCurrentList => {
+                let list_id = self.list_id.clone();
+                sender.input(AppInput::DeleteList(list_id));
             }
             AppInput::SaveTaskDetails => {
                 if let Some(id) = self.editing_task_id.take() {
@@ -736,39 +793,58 @@ impl SimpleComponent for AppModel {
 
                 sender.input(AppInput::SyncWithGoogle);
             }
-            AppInput::SyncWithGoogle => {
-                if self.is_syncing {
-                    return;
-                }
-                self.is_syncing = true;
-
-                let sender_input = sender.input_sender().clone();
-                relm4::spawn(async move {
-                    println!("🔄 Starting background sync with Google Tasks API...");
-                    if let Ok(mut client) = gtasks_core::obtain_authenticated_client().await {
-                        let mut db = match Database::new("task_lists.db") {
-                            Ok(db) => db,
-                            Err(err) => {
-                                eprintln!("Failed to open DB for sync: {}", err);
-                                let _ = sender_input.send(AppInput::Refresh);
-                                return;
-                            }
-                        };
-
-                        if let Err(err) = gtasks_core::sync_local_to_db(&mut client, &mut db).await
-                        {
-                            eprintln!("Error in sync_local_to_db: {}", err);
-                        }
-                        if let Err(err) = gtasks_core::sync_remote_to_db(&mut client, &mut db).await
-                        {
-                            eprintln!("Error in sync_remote_to_db: {}", err);
-                        }
-                    } else {
-                        eprintln!("Failed to obtain authenticated client for sync");
+            AppInput::DeleteList(list_id) => {
+                if let Some(ref db) = self.db {
+                    if let Err(err) = db.delete_task_list_db(&list_id) {
+                        eprintln!("Failed to delete task list from SQLite: {}", err);
                     }
+                }
 
-                    let _ = sender_input.send(AppInput::Refresh);
+                let pos = self
+                    .task_list_factory
+                    .guard()
+                    .iter()
+                    .position(|r| r.id == list_id);
+                if let Some(p) = pos {
+                    self.task_list_factory.guard().remove(p);
+                }
+                self.task_lists.retain(|l| l.id != list_id);
+
+                let is_current = self.list_id == list_id;
+
+                let id_to_delete = list_id.clone();
+                relm4::spawn(async move {
+                    if !id_to_delete.starts_with("list_") {
+                        if let Ok(mut client) = gtasks_core::obtain_authenticated_client().await {
+                            let _ = client.delete_task_list(&id_to_delete).await;
+                        }
+                    }
                 });
+
+                if is_current {
+                    if let Some(first) = self.task_lists.first() {
+                        let new_id = first.id.clone();
+                        sender.input(AppInput::SelectTaskList(new_id));
+                    } else {
+                        let default_id = "@default".to_string();
+                        let default_list = TaskList {
+                            id: default_id.clone(),
+                            title: "My Tasks".to_string(),
+                            updated: None,
+                        };
+                        if let Some(ref db) = self.db {
+                            let _ = db.save_task_lists(std::slice::from_ref(&default_list));
+                        }
+                        self.task_lists = vec![default_list];
+                        sender.input(AppInput::SelectTaskList(default_id));
+                    }
+                }
+            }
+            AppInput::SyncWithGoogle => {
+                self.sync_manager.trigger_sync();
+            }
+            AppInput::SetSyncing(is_syncing) => {
+                self.is_syncing = is_syncing;
             }
             AppInput::Refresh => {
                 self.is_syncing = false;

@@ -92,6 +92,11 @@ impl GoogleTasksClient {
         let response = self
             .execute_with_retry(|client, token| client.delete(&url).bearer_auth(token))
             .await?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND
+            || response.status() == reqwest::StatusCode::NO_CONTENT
+        {
+            return Ok(());
+        }
         response.error_for_status()?;
         Ok(())
     }
@@ -101,18 +106,26 @@ impl GoogleTasksClient {
         &mut self,
         list_id: &str,
         show_completed: bool,
+        updated_min: Option<&chrono::DateTime<chrono::Utc>>,
     ) -> Result<Vec<TaskGet>, reqwest::Error> {
         let url = format!(
             "https://www.googleapis.com/tasks/v1/lists/{}/tasks",
             list_id
         );
 
+        let mut query = vec![
+            ("showCompleted", show_completed.to_string()),
+            ("showHidden", show_completed.to_string()),
+        ];
+        let updated_min_str;
+        if let Some(dt) = updated_min {
+            updated_min_str = dt.to_rfc3339();
+            query.push(("updatedMin", updated_min_str.clone()));
+        }
+
         let response = self
             .execute_with_retry(|client, token| {
-                client.get(&url).bearer_auth(token).query(&[
-                    ("showCompleted", show_completed.to_string()),
-                    ("showHidden", show_completed.to_string()),
-                ])
+                client.get(&url).bearer_auth(token).query(&query)
             })
             .await?;
         let response = response.error_for_status()?;

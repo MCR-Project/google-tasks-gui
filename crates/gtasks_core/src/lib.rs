@@ -1,9 +1,11 @@
 pub mod api;
 pub mod auth;
 pub mod db;
+pub mod sync;
 
 pub use api::{GoogleTasksClient, TaskList, TaskLocal};
 pub use db::Database;
+pub use sync::{SyncCommand, SyncEvent, SyncManager};
 use futures::future::join_all;
 use std::error::Error;
 
@@ -31,10 +33,11 @@ pub async fn obtain_authenticated_client() -> Result<GoogleTasksClient, Box<dyn 
     Ok(GoogleTasksClient::new(token_response.access_token))
 }
 
-/// Fetches task lists and tasks from Google API in parallel and caches them into SQLite.
-pub async fn sync_remote_to_db(
+/// Fetches task lists and tasks from Google API in parallel with optional delta timestamp caching into SQLite.
+pub async fn sync_remote_to_db_delta(
     client: &mut GoogleTasksClient,
     db: &mut Database,
+    last_sync: Option<chrono::DateTime<chrono::Utc>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let lists = client.get_task_lists().await?;
     db.save_task_lists(&lists)?;
@@ -43,7 +46,9 @@ pub async fn sync_remote_to_db(
         let mut client_clone = client.clone();
         let list_id = list.id.clone();
         async move {
-            let raw_tasks = client_clone.get_tasks(&list_id, true).await?;
+            let raw_tasks = client_clone
+                .get_tasks(&list_id, true, last_sync.as_ref())
+                .await?;
             let local_tasks: Vec<TaskLocal> = raw_tasks
                 .into_iter()
                 .map(|raw| TaskLocal::from_task_get(raw, list_id.clone()))
@@ -59,6 +64,13 @@ pub async fn sync_remote_to_db(
     }
 
     Ok(())
+}
+
+pub async fn sync_remote_to_db(
+    client: &mut GoogleTasksClient,
+    db: &mut Database,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    sync_remote_to_db_delta(client, db, None).await
 }
 
 pub async fn sync_local_to_db(

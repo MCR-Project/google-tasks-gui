@@ -123,14 +123,14 @@ impl Database {
         let mut conn = self.conn.lock().unwrap();
         let tx = conn.transaction()?;
         tx.execute(
+            "INSERT INTO task_lists (id, title, updated, dirty) VALUES (?1, ?2, ?3, 0) ON CONFLICT(id) DO UPDATE SET title = excluded.title, updated = excluded.updated, dirty = 0",
+            params![new_list.id, new_list.title, new_list.updated],
+        )?;
+        tx.execute(
             "UPDATE tasks SET list_id = ?1 WHERE list_id = ?2",
             params![new_list.id, old_list_id],
         )?;
         tx.execute("DELETE FROM task_lists WHERE id = ?1", params![old_list_id])?;
-        tx.execute(
-            "INSERT INTO task_lists (id, title, updated, dirty) VALUES (?1, ?2, ?3, 0) ON CONFLICT(id) DO UPDATE SET title = excluded.title, updated = excluded.updated, dirty = 0",
-            params![new_list.id, new_list.title, new_list.updated],
-        )?;
         tx.commit()?;
         Ok(())
     }
