@@ -24,10 +24,15 @@ impl Database {
             "CREATE TABLE IF NOT EXISTS task_lists (
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
-                updated TEXT
+                updated TEXT,
+                dirty INTEGER NOT NULL DEFAULT 0
             )",
             [],
         )?;
+        let _ = conn.execute(
+            "ALTER TABLE task_lists ADD COLUMN dirty INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS tasks (
@@ -41,10 +46,15 @@ impl Database {
                 parent TEXT,
                 updated TEXT,
                 dirty INTEGER NOT NULL DEFAULT 0,
+                is_deleted INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(list_id) REFERENCES task_lists(id)
             )",
             [],
         )?;
+        let _ = conn.execute(
+            "ALTER TABLE tasks ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
         Ok(())
     }
 
@@ -54,7 +64,7 @@ impl Database {
 
         for task_list in task_lists {
             tx.execute(
-                "INSERT INTO task_lists (id, title, updated) VALUES (?1, ?2, ?3) ON CONFLICT(id) DO UPDATE SET title = excluded.title, updated = excluded.updated",
+                "INSERT INTO task_lists (id, title, updated, dirty) VALUES (?1, ?2, ?3, 0) ON CONFLICT(id) DO UPDATE SET title = excluded.title, updated = excluded.updated, dirty = 0",
                 params![task_list.id, task_list.title, task_list.updated],
             )?;
         }
@@ -80,6 +90,26 @@ impl Database {
         Ok(task_lists)
     }
 
+    pub fn get_dirty_task_lists(&self) -> Result<Vec<TaskList>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, title, updated FROM task_lists WHERE dirty = 1 OR id LIKE 'list_%'",
+        )?;
+        let task_list_iter = stmt.query_map([], |row| {
+            Ok(TaskList {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                updated: row.get(2)?,
+            })
+        })?;
+
+        let mut task_lists = Vec::new();
+        for task_list in task_list_iter {
+            task_lists.push(task_list?);
+        }
+        Ok(task_lists)
+    }
+
     pub fn delete_task_list_db(&self, list_id: &str) -> Result<()> {
         let mut conn = self.conn.lock().unwrap();
         let tx = conn.transaction()?;
@@ -89,10 +119,97 @@ impl Database {
         Ok(())
     }
 
+    pub fn migrate_local_list_id(&self, old_list_id: &str, new_list: &TaskList) -> Result<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        tx.execute(
+            "UPDATE tasks SET list_id = ?1 WHERE list_id = ?2",
+            params![new_list.id, old_list_id],
+        )?;
+        tx.execute("DELETE FROM task_lists WHERE id = ?1", params![old_list_id])?;
+        tx.execute(
+            "INSERT INTO task_lists (id, title, updated, dirty) VALUES (?1, ?2, ?3, 0) ON CONFLICT(id) DO UPDATE SET title = excluded.title, updated = excluded.updated, dirty = 0",
+            params![new_list.id, new_list.title, new_list.updated],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn mark_task_deleted(&self, task_id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE tasks SET is_deleted = 1, dirty = 1 WHERE id = ?1",
+            params![task_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn purge_task(&self, task_id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM tasks WHERE id = ?1", params![task_id])?;
+        Ok(())
+    }
+
+    pub fn get_pending_deletions(&self) -> Result<Vec<TaskLocal>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("
+        SELECT id, list_id, title, is_completed, notes, due, completed, parent, updated, dirty, is_deleted FROM tasks WHERE is_deleted = 1")?;
+
+        let task_iter = stmt.query_map([], |row| {
+            let is_completed_int: i32 = row.get(3)?;
+            let due_str: Option<String> = row.get(5)?;
+            let completed_str: Option<String> = row.get(6)?;
+            let updated_str: Option<String> = row.get(8)?;
+
+            let due = due_str.as_ref().and_then(|due_str| {
+                DateTime::parse_from_rfc3339(due_str)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&Utc))
+            });
+
+            let completed = completed_str.as_ref().and_then(|completed_str| {
+                DateTime::parse_from_rfc3339(completed_str)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&Utc))
+            });
+
+            let updated = updated_str.as_ref().and_then(|updated_str| {
+                DateTime::parse_from_rfc3339(updated_str)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&Utc))
+            });
+
+            let dirty_int: i32 = row.get(9)?;
+            let is_dirty: bool = dirty_int == 1;
+            let is_deleted_int: i32 = row.get(10)?;
+            let is_deleted: bool = is_deleted_int == 1;
+
+            Ok(TaskLocal {
+                id: row.get(0)?,
+                list_id: row.get(1)?,
+                title: row.get(2)?,
+                is_completed: is_completed_int != 0,
+                notes: row.get(4)?,
+                due,
+                completed,
+                parent: row.get(7)?,
+                updated,
+                is_dirty,
+                is_deleted,
+            })
+        })?;
+
+        let mut tasks = Vec::new();
+        for task in task_iter {
+            tasks.push(task?);
+        }
+        Ok(tasks)
+    }
+
     pub fn get_tasks_for_list(&self, list_id: &str) -> Result<Vec<TaskLocal>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare("
-        SELECT id, list_id, title, is_completed, notes, due, completed, parent, updated, dirty FROM tasks WHERE list_id = ?1")?;
+        SELECT id, list_id, title, is_completed, notes, due, completed, parent, updated, dirty, is_deleted FROM tasks WHERE list_id = ?1 AND is_deleted = 0")?;
 
         let task_iter = stmt.query_map(params![list_id], |row| {
             let is_completed_int: i32 = row.get(3)?;
@@ -120,6 +237,8 @@ impl Database {
 
             let dirty_int: i32 = row.get(9)?;
             let is_dirty: bool = dirty_int == 1;
+            let is_deleted_int: i32 = row.get(10)?;
+            let is_deleted: bool = is_deleted_int == 1;
 
             Ok(TaskLocal {
                 id: row.get(0)?,
@@ -132,6 +251,7 @@ impl Database {
                 parent: row.get(7)?,
                 updated,
                 is_dirty,
+                is_deleted,
             })
         })?;
 
@@ -146,7 +266,7 @@ impl Database {
     pub fn get_all_tasks(&self) -> Result<Vec<TaskLocal>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare("
-        SELECT id, list_id, title, is_completed, notes, due, completed, parent, updated, dirty FROM tasks")?;
+        SELECT id, list_id, title, is_completed, notes, due, completed, parent, updated, dirty, is_deleted FROM tasks WHERE is_deleted = 0")?;
 
         let task_iter = stmt.query_map([], |row| {
             let is_completed_int: i32 = row.get(3)?;
@@ -174,6 +294,8 @@ impl Database {
 
             let dirty_int: i32 = row.get(9)?;
             let is_dirty: bool = dirty_int == 1;
+            let is_deleted_int: i32 = row.get(10)?;
+            let is_deleted: bool = is_deleted_int == 1;
 
             Ok(TaskLocal {
                 id: row.get(0)?,
@@ -186,6 +308,7 @@ impl Database {
                 parent: row.get(7)?,
                 updated,
                 is_dirty,
+                is_deleted,
             })
         })?;
 
@@ -207,9 +330,10 @@ impl Database {
             let updated_str = task.updated.map(|u| u.to_rfc3339());
             let is_completed_int = if task.is_completed { 1 } else { 0 };
             let is_dirty_int = if task.is_dirty { 1 } else { 0 };
+            let is_deleted_int = if task.is_deleted { 1 } else { 0 };
             tx.execute(
-                "INSERT INTO tasks (id, list_id, title, is_completed, notes, due, completed, parent, updated, dirty) 
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) 
+                "INSERT INTO tasks (id, list_id, title, is_completed, notes, due, completed, parent, updated, dirty, is_deleted) 
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) 
                 ON CONFLICT(id) DO UPDATE SET 
                     list_id = excluded.list_id, 
                     title = excluded.title, 
@@ -219,7 +343,8 @@ impl Database {
                     completed = excluded.completed, 
                     parent = excluded.parent, 
                     updated = excluded.updated,
-                    dirty = excluded.dirty
+                    dirty = excluded.dirty,
+                    is_deleted = excluded.is_deleted
                 WHERE excluded.updated >= tasks.updated OR tasks.dirty = 0",
 
                 params![
@@ -232,7 +357,8 @@ impl Database {
                     completed_str,
                     task.parent,
                     updated_str,
-                    is_dirty_int
+                    is_dirty_int,
+                    is_deleted_int
                 ],
             )?;
         }
@@ -254,7 +380,7 @@ impl Database {
 
     pub fn get_dirty_task(&self) -> Result<Vec<TaskLocal>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT id, list_id, title, is_completed, notes, due, completed, parent, updated, dirty FROM tasks WHERE dirty = 1")?;
+        let mut stmt = conn.prepare("SELECT id, list_id, title, is_completed, notes, due, completed, parent, updated, dirty, is_deleted FROM tasks WHERE dirty = 1 AND is_deleted = 0")?;
 
         let task_iter = stmt.query_map([], |row| {
             let is_completed_int: i32 = row.get(3)?;
@@ -264,6 +390,8 @@ impl Database {
 
             let dirty_int: i32 = row.get(9)?;
             let is_dirty: bool = dirty_int == 1;
+            let is_deleted_int: i32 = row.get(10)?;
+            let is_deleted: bool = is_deleted_int == 1;
 
             let due = due_str.as_ref().and_then(|due_str| {
                 DateTime::parse_from_rfc3339(due_str)
@@ -294,6 +422,7 @@ impl Database {
                 parent: row.get(7)?,
                 updated,
                 is_dirty,
+                is_deleted,
             })
         })?;
 
@@ -307,7 +436,7 @@ impl Database {
     pub fn get_uncompleted_count_for_list(&self, list_id: &str) -> Result<usize> {
         let conn = self.conn.lock().unwrap();
         let count: usize = conn.query_row(
-            "SELECT COUNT(*) FROM tasks WHERE list_id = ?1 AND is_completed = 0",
+            "SELECT COUNT(*) FROM tasks WHERE list_id = ?1 AND is_completed = 0 AND is_deleted = 0",
             params![list_id],
             |row| row.get(0),
         )?;
@@ -317,7 +446,7 @@ impl Database {
     pub fn get_all_uncompleted_count(&self) -> Result<usize> {
         let conn = self.conn.lock().unwrap();
         let count: usize = conn.query_row(
-            "SELECT COUNT(*) FROM tasks WHERE is_completed = 0",
+            "SELECT COUNT(*) FROM tasks WHERE is_completed = 0 AND is_deleted = 0",
             [],
             |row| row.get(0),
         )?;
@@ -327,7 +456,7 @@ impl Database {
     pub fn get_starred_uncompleted_count(&self) -> Result<usize> {
         let conn = self.conn.lock().unwrap();
         let count: usize = conn.query_row(
-            "SELECT COUNT(*) FROM tasks WHERE is_completed = 0 AND title LIKE '⭐ %'",
+            "SELECT COUNT(*) FROM tasks WHERE is_completed = 0 AND is_deleted = 0 AND title LIKE '⭐ %'",
             [],
             |row| row.get(0),
         )?;

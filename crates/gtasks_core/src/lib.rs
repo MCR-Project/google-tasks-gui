@@ -8,7 +8,8 @@ use futures::future::join_all;
 use std::error::Error;
 
 /// Resolves authentication by checking Keyring first, falling back to OAuth PKCE.
-pub async fn obtain_authenticated_client() -> Result<GoogleTasksClient, Box<dyn Error + Send + Sync>> {
+pub async fn obtain_authenticated_client() -> Result<GoogleTasksClient, Box<dyn Error + Send + Sync>>
+{
     let token_response = if let Ok(refresh_token) = auth::keyring::get_refresh_token() {
         println!("🔐 Found saved refresh token in OS keyring. Refreshing access token...");
         auth::refresh_access_token(&refresh_token).await?
@@ -64,6 +65,43 @@ pub async fn sync_local_to_db(
     client: &mut GoogleTasksClient,
     db: &mut Database,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    // 0. Sync pending local task lists created offline/locally
+    if let Ok(dirty_lists) = db.get_dirty_task_lists() {
+        for list in dirty_lists {
+            match client.create_task_list(&list.title).await {
+                Ok(created_list) => {
+                    println!(
+                        "📋 Created remote Google Task List '{}' with ID: {}",
+                        created_list.title, created_list.id
+                    );
+                    if let Err(err) = db.migrate_local_list_id(&list.id, &created_list) {
+                        eprintln!("Failed to migrate local list ID {}: {}", list.id, err);
+                    }
+                }
+                Err(err) => {
+                    eprintln!("Error creating remote task list {}: {}", list.title, err);
+                }
+            }
+        }
+    }
+
+    // 1. Process pending soft deletions
+    if let Ok(pending_deletions) = db.get_pending_deletions() {
+        for task in pending_deletions {
+            if !task.id.is_empty()
+                && !task.id.starts_with("local_")
+                && !task.list_id.starts_with("list_")
+            {
+                if let Err(err) = client.delete_task(&task.list_id, &task.id).await {
+                    eprintln!("Error deleting remote task {}: {}", task.id, err);
+                    continue;
+                }
+            }
+            let _ = db.purge_task(&task.id);
+        }
+    }
+
+    // 2. Process dirty creations and updates
     let dirty_tasks = db.get_dirty_task()?;
 
     if dirty_tasks.is_empty() {
@@ -71,12 +109,21 @@ pub async fn sync_local_to_db(
     }
 
     for mut task in dirty_tasks {
-        let raw_task = if task.id.is_empty() {
-            // 🆕 Brand new task: Use HTTP POST (create_task)
-            client.create_task(&task.list_id, &task).await?
+        if task.list_id.starts_with("list_") {
+            continue;
+        }
+
+        if task.id.is_empty() || task.id.starts_with("local_") {
+            let temp_id = task.id.clone();
+            let raw_task = client.create_task(&task.list_id, &task).await?;
+            if !temp_id.is_empty() {
+                let _ = db.purge_task(&temp_id);
+            }
+            task = TaskLocal::from_task_get(raw_task, task.list_id.clone());
+            task.is_dirty = false;
+            db.save_tasks(&[task])?;
         } else {
-            // ✏️ Existing task edit: Use HTTP PATCH (update_task)
-            client
+            let raw_task = client
                 .update_task(
                     &task.list_id,
                     &task.id,
@@ -85,18 +132,11 @@ pub async fn sync_local_to_db(
                     Some(task.is_completed),
                     task.due.as_ref(),
                 )
-                .await?
-        };
-
-        // If it was a new task, delete the temporary empty-id record from SQLite
-        if task.id.is_empty() {
-            let _ = db.delete_tasks_db(&[String::new()]);
+                .await?;
+            task = TaskLocal::from_task_get(raw_task, task.list_id.clone());
+            task.is_dirty = false;
+            db.save_tasks(&[task])?;
         }
-
-        // Save official server task back to SQLite with is_dirty = false
-        task = TaskLocal::from_task_get(raw_task, task.list_id.clone());
-        task.is_dirty = false;
-        db.save_tasks(&[task])?;
     }
     Ok(())
 }

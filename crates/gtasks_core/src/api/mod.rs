@@ -37,6 +37,7 @@ pub struct TaskLocal {
     pub parent: Option<String>,                           // Parent task ID (in case of subtask)
     pub updated: Option<chrono::DateTime<chrono::Utc>>,   // Last modification date
     pub is_dirty: bool,
+    pub is_deleted: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -84,7 +85,10 @@ impl GoogleTasksClient {
     }
 
     pub async fn delete_task_list(&mut self, list_id: &str) -> Result<(), reqwest::Error> {
-        let url = format!("https://www.googleapis.com/tasks/v1/users/@me/lists/{}", list_id);
+        let url = format!(
+            "https://www.googleapis.com/tasks/v1/users/@me/lists/{}",
+            list_id
+        );
         let response = self
             .execute_with_retry(|client, token| client.delete(&url).bearer_auth(token))
             .await?;
@@ -240,6 +244,9 @@ impl GoogleTasksClient {
         let response = self
             .execute_with_retry(|client, token| client.delete(&url).bearer_auth(token))
             .await?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(());
+        }
         response.error_for_status()?;
         Ok(())
     }
@@ -276,7 +283,8 @@ impl TaskLocal {
             completed,
             parent: task_get.parent,
             updated,
-            is_dirty
+            is_dirty,
+            is_deleted: false,
         }
     }
 
