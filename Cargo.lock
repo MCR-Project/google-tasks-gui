@@ -1306,6 +1306,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -1315,9 +1316,11 @@ dependencies = [
  "chrono",
  "dotenvy",
  "gtasks_core",
+ "libadwaita",
  "relm4",
  "relm4-components",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

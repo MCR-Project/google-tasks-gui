@@ -24,6 +24,21 @@ pub struct PkceChallenge {
     pub state: String,
 }
 
+fn resolve_client_credentials(
+) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
+    let client_id = match option_env!("GOOGLE_CLIENT_ID") {
+        Some(val) if !val.is_empty() => val.to_string(),
+        _ => env::var("GOOGLE_CLIENT_ID")
+            .map_err(|_| "GOOGLE_CLIENT_ID must be set at compile-time or in environment")?,
+    };
+    let client_secret = match option_env!("GOOGLE_CLIENT_SECRET") {
+        Some(val) if !val.is_empty() => val.to_string(),
+        _ => env::var("GOOGLE_CLIENT_SECRET")
+            .map_err(|_| "GOOGLE_CLIENT_SECRET must be set at compile-time or in environment")?,
+    };
+    Ok((client_id, client_secret))
+}
+
 // Encode in sha256 URL-safe format without padding
 pub fn generate_pkce() -> PkceChallenge {
     let mut bytes = [0u8; 32];
@@ -45,16 +60,7 @@ pub fn generate_pkce() -> PkceChallenge {
 }
 
 pub async fn authenticate() -> Result<TokenResponse, Box<dyn std::error::Error + Send + Sync>> {
-    let client_id = match option_env!("GOOGLE_CLIENT_ID") {
-        Some(val) if !val.is_empty() => val.to_string(),
-        _ => env::var("GOOGLE_CLIENT_ID")
-            .expect("GOOGLE_CLIENT_ID must be set at compile-time or in .env file"),
-    };
-    let client_secret = match option_env!("GOOGLE_CLIENT_SECRET") {
-        Some(val) if !val.is_empty() => val.to_string(),
-        _ => env::var("GOOGLE_CLIENT_SECRET")
-            .expect("GOOGLE_CLIENT_SECRET must be set at compile-time or in .env file"),
-    };
+    let (client_id, client_secret) = resolve_client_credentials()?;
 
     // Start a simple HTTP server to listen for the OAuth callback
     let listener = match TcpListener::bind("127.0.0.1:8080").await {
@@ -74,9 +80,9 @@ pub async fn authenticate() -> Result<TokenResponse, Box<dyn std::error::Error +
         client_id, redirect_uri, scope, pkce.code_challenge, pkce.state
     );
 
-    println!("Please open the following URL in your browser to authenticate:");
+    tracing::info!("Please open the following URL in your browser to authenticate:");
     open::that(&auth_url)?;
-    println!("Listening for OAuth callback on {}...", redirect_uri);
+    tracing::info!("Listening for OAuth callback on {}...", redirect_uri);
 
     let (mut socket, _) = listener.accept().await?;
     let mut buffer = [0; 2048];
@@ -95,7 +101,7 @@ pub async fn authenticate() -> Result<TokenResponse, Box<dyn std::error::Error +
     socket.write_all(http_response.as_bytes()).await?;
 
     // Exchange the authorization code for an access token using PKCE verifier
-    println!("Exchanging authorization code for access token...");
+    tracing::info!("Exchanging authorization code for access token...");
     let client = reqwest::Client::new();
     let token_response = client
         .post("https://oauth2.googleapis.com/token")
@@ -142,10 +148,7 @@ fn extract_code_and_state_from_request(request: &str) -> Option<(String, String)
 pub async fn refresh_access_token(
     refresh_token: &str,
 ) -> Result<TokenResponse, Box<dyn std::error::Error + Send + Sync>> {
-    let client_id =
-        env::var("GOOGLE_CLIENT_ID").expect("GOOGLE_CLIENT_ID must be set in .env file");
-    let client_secret =
-        env::var("GOOGLE_CLIENT_SECRET").expect("GOOGLE_CLIENT_SECRET must be set in .env file");
+    let (client_id, client_secret) = resolve_client_credentials()?;
 
     let client = reqwest::Client::new();
     let token_response = client

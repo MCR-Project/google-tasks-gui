@@ -1,3 +1,4 @@
+use chrono::Datelike;
 use gtasks_core::{TaskList, TaskLocal};
 
 pub mod draw;
@@ -45,6 +46,96 @@ pub struct App {
     pub title_buffer: String,
     pub notes_buffer: String,
     pub due_buffer: String,
+}
+
+pub fn parse_nlp_task(input: &str) -> (String, Option<chrono::DateTime<chrono::Utc>>) {
+    let lower = input.to_lowercase();
+    let today = chrono::Local::now().date_naive();
+    let mut due_date: Option<chrono::NaiveDate> = None;
+    let mut matched_phrase: Option<&str> = None;
+
+    if lower.contains("next week") {
+        due_date = Some(today + chrono::Duration::days(7));
+        matched_phrase = Some("next week");
+    } else if lower.contains("tomorrow") {
+        due_date = Some(today + chrono::Duration::days(1));
+        matched_phrase = Some("tomorrow");
+    } else if lower.contains("today") {
+        due_date = Some(today);
+        matched_phrase = Some("today");
+    } else {
+        let patterns = [
+            ("next monday", chrono::Weekday::Mon),
+            ("next tuesday", chrono::Weekday::Tue),
+            ("next wednesday", chrono::Weekday::Wed),
+            ("next thursday", chrono::Weekday::Thu),
+            ("next friday", chrono::Weekday::Fri),
+            ("next saturday", chrono::Weekday::Sat),
+            ("next sunday", chrono::Weekday::Sun),
+        ];
+        for (phrase, weekday) in patterns {
+            if lower.contains(phrase) {
+                let mut d = today + chrono::Duration::days(1);
+                while d.weekday() != weekday {
+                    d += chrono::Duration::days(1);
+                }
+                due_date = Some(d);
+                matched_phrase = Some(phrase);
+                break;
+            }
+        }
+
+        if due_date.is_none() {
+            let single_weekdays = [
+                ("monday", chrono::Weekday::Mon),
+                ("tuesday", chrono::Weekday::Tue),
+                ("wednesday", chrono::Weekday::Wed),
+                ("thursday", chrono::Weekday::Thu),
+                ("friday", chrono::Weekday::Fri),
+                ("saturday", chrono::Weekday::Sat),
+                ("sunday", chrono::Weekday::Sun),
+            ];
+            for (name, weekday) in single_weekdays {
+                let words: Vec<&str> = lower.split_whitespace().collect();
+                if words.contains(&name) {
+                    let mut d = today + chrono::Duration::days(1);
+                    while d.weekday() != weekday {
+                        d += chrono::Duration::days(1);
+                    }
+                    due_date = Some(d);
+                    matched_phrase = Some(name);
+                    break;
+                }
+            }
+        }
+    }
+
+    let clean_title = if let Some(phrase) = matched_phrase {
+        let mut result = String::new();
+        let mut remaining = input;
+        while let Some(pos) = remaining.to_lowercase().find(phrase) {
+            result.push_str(&remaining[..pos]);
+            remaining = &remaining[pos + phrase.len()..];
+        }
+        result.push_str(remaining);
+        result
+    } else {
+        input.to_string()
+    };
+
+    let clean_trimmed = clean_title.trim().to_string();
+    let final_title = if clean_trimmed.is_empty() {
+        input.trim().to_string()
+    } else {
+        clean_trimmed
+    };
+
+    let due_dt = due_date.map(|d| {
+        let naive_dt = d.and_hms_opt(0, 0, 0).unwrap();
+        chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(naive_dt, chrono::Utc)
+    });
+
+    (final_title, due_dt)
 }
 
 impl App {
@@ -106,7 +197,8 @@ impl App {
     pub fn select_down(&mut self) {
         match self.active_pane {
             ActivePane::TaskLists => {
-                if !self.task_lists.is_empty() && self.selected_list_idx < self.task_lists.len() - 1
+                if !self.task_lists.is_empty()
+                    && self.selected_list_idx < self.task_lists.len() - 1
                 {
                     self.selected_list_idx += 1;
                 }
@@ -114,6 +206,30 @@ impl App {
             ActivePane::Tasks => {
                 if !self.tasks.is_empty() && self.selected_task_idx < self.tasks.len() - 1 {
                     self.selected_task_idx += 1;
+                }
+            }
+        }
+    }
+
+    // Navigate to top
+    pub fn select_top(&mut self) {
+        match self.active_pane {
+            ActivePane::TaskLists => self.selected_list_idx = 0,
+            ActivePane::Tasks => self.selected_task_idx = 0,
+        }
+    }
+
+    // Navigate to bottom
+    pub fn select_bottom(&mut self) {
+        match self.active_pane {
+            ActivePane::TaskLists => {
+                if !self.task_lists.is_empty() {
+                    self.selected_list_idx = self.task_lists.len() - 1;
+                }
+            }
+            ActivePane::Tasks => {
+                if !self.tasks.is_empty() {
+                    self.selected_task_idx = self.tasks.len() - 1;
                 }
             }
         }
@@ -226,16 +342,24 @@ impl App {
     pub fn submit_input(&mut self) {
         match self.edit_action {
             EditAction::CreateTask => {
-                let title = self.title_buffer.trim().to_string();
-                if !title.is_empty() {
+                let (clean_title, due_dt) = parse_nlp_task(&self.title_buffer);
+                if !clean_title.is_empty() {
                     if let Some(current_list) = self.selected_list() {
+                        let task_id = format!(
+                            "local_{}",
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis()
+                        );
+
                         let new_task = TaskLocal {
-                            id: String::new(),
+                            id: task_id,
                             list_id: current_list.id.clone(),
-                            title: Some(title.clone()),
+                            title: Some(clean_title.clone()),
                             is_completed: false,
                             notes: None,
-                            due: None,
+                            due: due_dt,
                             completed: None,
                             parent: None,
                             updated: Some(chrono::Utc::now()),
@@ -244,7 +368,7 @@ impl App {
                         };
                         self.tasks.push(new_task);
                         self.selected_task_idx = self.tasks.len() - 1;
-                        self.status_message = format!("Created new task '{}'", title);
+                        self.status_message = format!("Created new task '{}'", clean_title);
                     }
                 }
             }
@@ -288,5 +412,42 @@ impl App {
         self.notes_buffer.clear();
         self.due_buffer.clear();
         self.input_mode = InputMode::Normal;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_nlp_task_today_tomorrow() {
+        let (title1, due1) = parse_nlp_task("Buy milk today");
+        assert_eq!(title1, "Buy milk");
+        assert!(due1.is_some());
+
+        let (title2, due2) = parse_nlp_task("Finish report tomorrow");
+        assert_eq!(title2, "Finish report");
+        assert!(due2.is_some());
+    }
+
+    #[test]
+    fn test_parse_nlp_task_no_date() {
+        let (title, due) = parse_nlp_task("Read documentation");
+        assert_eq!(title, "Read documentation");
+        assert!(due.is_none());
+    }
+
+    #[test]
+    fn test_select_top_and_bottom() {
+        let mut app = App::new(vec![], vec![]);
+        app.task_lists = vec![
+            TaskList { id: "1".into(), title: "L1".into(), updated: None },
+            TaskList { id: "2".into(), title: "L2".into(), updated: None },
+            TaskList { id: "3".into(), title: "L3".into(), updated: None },
+        ];
+        app.select_bottom();
+        assert_eq!(app.selected_list_idx, 2);
+        app.select_top();
+        assert_eq!(app.selected_list_idx, 0);
     }
 }

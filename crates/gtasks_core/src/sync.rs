@@ -73,7 +73,7 @@ async fn run_sync_actor(
                         timer.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
                         if became_active {
-                            println!("🪟 Window focused! Triggering immediate background delta sync...");
+                            tracing::info!("🪟 Window focused! Triggering immediate background delta sync...");
                             let _ = event_tx.send(SyncEvent::SyncStarted { is_manual: false }).await;
                             let res = perform_single_sync(&mut last_sync_time).await;
                             let _ = event_tx.send(SyncEvent::SyncFinished(res)).await;

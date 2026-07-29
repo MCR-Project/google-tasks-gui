@@ -8,11 +8,14 @@ pub struct TaskList {
     pub updated: Option<String>,
 }
 
-//Wrapper for the Google Tasks API client response
+// Wrapper for the Google Tasks API client response
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TaskListsResponse {
     pub items: Option<Vec<TaskList>>,
+    #[serde(rename = "nextPageToken")]
+    pub next_page_token: Option<String>,
 }
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TaskGet {
     pub id: String,
@@ -23,6 +26,7 @@ pub struct TaskGet {
     pub completed: Option<String>, // Completion date of the task
     pub parent: Option<String>,    // Parent task ID (in case of subtask)
     pub updated: Option<String>,   // Last modification date
+    pub deleted: Option<bool>,     // Remote deletion status
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -43,6 +47,8 @@ pub struct TaskLocal {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TasksResponse {
     pub items: Option<Vec<TaskGet>>,
+    #[serde(rename = "nextPageToken")]
+    pub next_page_token: Option<String>,
 }
 
 // API
@@ -63,13 +69,33 @@ impl GoogleTasksClient {
     // Get the list of task lists for the authenticated user
     pub async fn get_task_lists(&mut self) -> Result<Vec<TaskList>, reqwest::Error> {
         let url = "https://www.googleapis.com/tasks/v1/users/@me/lists";
-        let response = self
-            .execute_with_retry(|client, token| client.get(url).bearer_auth(token))
-            .await?;
-        let response = response.error_for_status()?;
+        let mut all_lists = Vec::new();
+        let mut page_token: Option<String> = None;
 
-        let task_lists_response: TaskListsResponse = response.json().await?;
-        Ok(task_lists_response.items.unwrap_or_default())
+        loop {
+            let response = self
+                .execute_with_retry(|client, token| {
+                    let mut req = client.get(url).bearer_auth(token);
+                    if let Some(ref pt) = page_token {
+                        req = req.query(&[("pageToken", pt)]);
+                    }
+                    req
+                })
+                .await?;
+            let response = response.error_for_status()?;
+            let task_lists_response: TaskListsResponse = response.json().await?;
+
+            if let Some(items) = task_lists_response.items {
+                all_lists.extend(items);
+            }
+
+            match task_lists_response.next_page_token {
+                Some(token) if !token.is_empty() => page_token = Some(token),
+                _ => break,
+            }
+        }
+
+        Ok(all_lists)
     }
 
     // Create a new task list
@@ -113,24 +139,41 @@ impl GoogleTasksClient {
             list_id
         );
 
-        let mut query = vec![
-            ("showCompleted", show_completed.to_string()),
-            ("showHidden", show_completed.to_string()),
-        ];
-        let updated_min_str;
-        if let Some(dt) = updated_min {
-            updated_min_str = dt.to_rfc3339();
-            query.push(("updatedMin", updated_min_str.clone()));
+        let updated_min_str = updated_min.map(|dt| dt.to_rfc3339());
+        let mut all_tasks = Vec::new();
+        let mut page_token: Option<String> = None;
+
+        loop {
+            let response = self
+                .execute_with_retry(|client, token| {
+                    let mut query = vec![
+                        ("showCompleted", show_completed.to_string()),
+                        ("showHidden", show_completed.to_string()),
+                        ("showDeleted", "true".to_string()),
+                    ];
+                    if let Some(ref dt_str) = updated_min_str {
+                        query.push(("updatedMin", dt_str.clone()));
+                    }
+                    if let Some(ref pt) = page_token {
+                        query.push(("pageToken", pt.clone()));
+                    }
+                    client.get(&url).bearer_auth(token).query(&query)
+                })
+                .await?;
+            let response = response.error_for_status()?;
+            let tasks_response: TasksResponse = response.json().await?;
+
+            if let Some(items) = tasks_response.items {
+                all_tasks.extend(items);
+            }
+
+            match tasks_response.next_page_token {
+                Some(token) if !token.is_empty() => page_token = Some(token),
+                _ => break,
+            }
         }
 
-        let response = self
-            .execute_with_retry(|client, token| {
-                client.get(&url).bearer_auth(token).query(&query)
-            })
-            .await?;
-        let response = response.error_for_status()?;
-        let tasks_response: TasksResponse = response.json().await?;
-        Ok(tasks_response.items.unwrap_or_default())
+        Ok(all_tasks)
     }
 
     pub async fn create_task(
@@ -228,7 +271,6 @@ impl GoogleTasksClient {
         let request = build_request(&self.client, &self.access_token);
         let response = request.send().await?;
 
-        //if error codde 401
         if response.status() == reqwest::StatusCode::UNAUTHORIZED {
             if let Ok(refresh_token) = crate::auth::keyring::get_refresh_token() {
                 if let Ok(token_response) = crate::auth::refresh_access_token(&refresh_token).await
@@ -285,6 +327,7 @@ impl TaskLocal {
                 .map(|dt| dt.with_timezone(&Utc))
         });
         let is_dirty = false;
+        let is_deleted = task_get.deleted.unwrap_or(false);
 
         TaskLocal {
             id: task_get.id,
@@ -297,7 +340,7 @@ impl TaskLocal {
             parent: task_get.parent,
             updated,
             is_dirty,
-            is_deleted: false,
+            is_deleted,
         }
     }
 

@@ -1,3 +1,4 @@
+use chrono::Datelike;
 use gtasks_core::api::{TaskList, TaskLocal};
 use gtasks_core::db::Database;
 use gtasks_core::sync::{SyncEvent, SyncManager};
@@ -134,6 +135,96 @@ impl FactoryComponent for TaskRow {
     }
 }
 
+fn parse_nlp_task(input: &str) -> (String, Option<chrono::DateTime<chrono::Utc>>) {
+    let lower = input.to_lowercase();
+    let today = chrono::Local::now().date_naive();
+    let mut due_date: Option<chrono::NaiveDate> = None;
+    let mut matched_phrase: Option<&str> = None;
+
+    if lower.contains("next week") {
+        due_date = Some(today + chrono::Duration::days(7));
+        matched_phrase = Some("next week");
+    } else if lower.contains("tomorrow") {
+        due_date = Some(today + chrono::Duration::days(1));
+        matched_phrase = Some("tomorrow");
+    } else if lower.contains("today") {
+        due_date = Some(today);
+        matched_phrase = Some("today");
+    } else {
+        let patterns = [
+            ("next monday", chrono::Weekday::Mon),
+            ("next tuesday", chrono::Weekday::Tue),
+            ("next wednesday", chrono::Weekday::Wed),
+            ("next thursday", chrono::Weekday::Thu),
+            ("next friday", chrono::Weekday::Fri),
+            ("next saturday", chrono::Weekday::Sat),
+            ("next sunday", chrono::Weekday::Sun),
+        ];
+        for (phrase, weekday) in patterns {
+            if lower.contains(phrase) {
+                let mut d = today + chrono::Duration::days(1);
+                while d.weekday() != weekday {
+                    d += chrono::Duration::days(1);
+                }
+                due_date = Some(d);
+                matched_phrase = Some(phrase);
+                break;
+            }
+        }
+
+        if due_date.is_none() {
+            let single_weekdays = [
+                ("monday", chrono::Weekday::Mon),
+                ("tuesday", chrono::Weekday::Tue),
+                ("wednesday", chrono::Weekday::Wed),
+                ("thursday", chrono::Weekday::Thu),
+                ("friday", chrono::Weekday::Fri),
+                ("saturday", chrono::Weekday::Sat),
+                ("sunday", chrono::Weekday::Sun),
+            ];
+            for (name, weekday) in single_weekdays {
+                let words: Vec<&str> = lower.split_whitespace().collect();
+                if words.contains(&name) {
+                    let mut d = today + chrono::Duration::days(1);
+                    while d.weekday() != weekday {
+                        d += chrono::Duration::days(1);
+                    }
+                    due_date = Some(d);
+                    matched_phrase = Some(name);
+                    break;
+                }
+            }
+        }
+    }
+
+    let clean_title = if let Some(phrase) = matched_phrase {
+        let mut result = String::new();
+        let mut remaining = input;
+        while let Some(pos) = remaining.to_lowercase().find(phrase) {
+            result.push_str(&remaining[..pos]);
+            remaining = &remaining[pos + phrase.len()..];
+        }
+        result.push_str(remaining);
+        result
+    } else {
+        input.to_string()
+    };
+
+    let clean_trimmed = clean_title.trim().to_string();
+    let final_title = if clean_trimmed.is_empty() {
+        input.trim().to_string()
+    } else {
+        clean_trimmed
+    };
+
+    let due_dt = due_date.map(|d| {
+        let naive_dt = d.and_hms_opt(0, 0, 0).unwrap();
+        chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(naive_dt, chrono::Utc)
+    });
+
+    (final_title, due_dt)
+}
+
 fn order_tasks_hierarchically(tasks: Vec<TaskLocal>) -> Vec<TaskLocal> {
     let mut parent_map: std::collections::HashMap<Option<String>, Vec<TaskLocal>> =
         std::collections::HashMap::new();
@@ -232,7 +323,6 @@ struct AppModel {
     show_new_list_entry: bool,
     is_syncing: bool,
     editing_task_id: Option<String>,
-    show_detail_window: bool,
     detail_title_buffer: gtk::EntryBuffer,
     detail_due_buffer: gtk::EntryBuffer,
     detail_notes_buffer: gtk::TextBuffer,
@@ -247,7 +337,6 @@ enum AppInput {
     DeleteTask(String),
     DeleteList(String),
     OpenTaskDetails(String),
-    CloseTaskDetails,
     SaveTaskDetails,
     DeleteCurrentTaskDetails,
     DeleteCurrentList,
@@ -268,212 +357,245 @@ impl SimpleComponent for AppModel {
     view! {
         adw::ApplicationWindow {
             set_title: Some("Google Tasks"),
-            set_default_size: (900, 600),
+            set_default_size: (1100, 650),
             connect_is_active_notify[sync_manager = model.sync_manager.clone()] => move |win| {
                 sync_manager.set_window_active(win.is_active());
             },
 
-            adw::Window {
-                set_title: Some("Task Details"),
-                set_default_size: (480, 360),
-                set_modal: true,
-                set_resizable: false,
-                #[watch]
-                set_visible: model.show_detail_window,
-
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-
-                    adw::HeaderBar {
-                        #[wrap(Some)]
-                        set_title_widget = &adw::WindowTitle {
-                            set_title: "Edit Task Details",
-                        },
-                        pack_start = &gtk::Button {
-                            set_label: "Cancel",
-                            connect_clicked => AppInput::CloseTaskDetails,
-                        },
-                        pack_end = &gtk::Button {
-                            set_label: "Save",
-                            add_css_class: "suggested-action",
-                            connect_clicked => AppInput::SaveTaskDetails,
-                        },
-                    },
-
-                    adw::PreferencesPage {
-                        adw::PreferencesGroup {
-                            set_title: "Task Information",
-
-                            adw::ActionRow {
-                                set_title: "Title",
-                                add_suffix = &gtk::Entry {
-                                    set_buffer: &model.detail_title_buffer,
-                                    set_valign: gtk::Align::Center,
-                                    set_hexpand: true,
-                                },
-                            },
-
-                            adw::ActionRow {
-                                set_title: "Due Date (YYYY-MM-DD)",
-                                add_suffix = &gtk::Entry {
-                                    set_buffer: &model.detail_due_buffer,
-                                    set_valign: gtk::Align::Center,
-                                    set_hexpand: true,
-                                },
-                            },
-                        },
-
-                        adw::PreferencesGroup {
-                            set_title: "Notes",
-
-                            gtk::ScrolledWindow {
-                                set_min_content_height: 120,
-                                set_margin_all: 6,
-
-                                gtk::TextView {
-                                    set_buffer: Some(&model.detail_notes_buffer),
-                                    set_wrap_mode: gtk::WrapMode::Word,
-                                },
-                            },
-                        },
-
-                        adw::PreferencesGroup {
-                            set_title: "Actions",
-
-                            adw::ActionRow {
-                                set_title: "Delete Task",
-                                add_suffix = &gtk::Button {
-                                    set_label: "Delete",
-                                    add_css_class: "destructive-action",
-                                    set_valign: gtk::Align::Center,
-                                    connect_clicked => AppInput::DeleteCurrentTaskDetails,
-                                },
-                            },
-                        },
-                    },
-                },
-            },
-
-            adw::Flap {
-                #[wrap(Some)]
-                set_flap = &gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_width_request: 240,
-
-                    adw::HeaderBar {
-                        set_show_start_title_buttons: false,
-                        set_show_end_title_buttons: false,
-                        #[wrap(Some)]
-                        set_title_widget = &adw::WindowTitle {
-                            set_title: "Task Lists",
-                        },
-                        pack_end = &gtk::Button {
-                            set_icon_name: "list-add-symbolic",
-                            set_tooltip_text: Some("Create new task list"),
-                            connect_clicked => AppInput::ToggleNewListEntry,
-                        },
-                    },
-
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                        #[watch]
-                        set_visible: model.show_new_list_entry,
-
-                        gtk::Entry {
-                            set_placeholder_text: Some("New list name..."),
-                            set_margin_all: 6,
-                            set_buffer: &model.new_list_buffer,
-                            connect_activate => AppInput::CreateTaskList,
-                        },
-                    },
-
-                    gtk::ScrolledWindow {
-                        set_vexpand: true,
-                        set_hexpand: true,
-
-                        #[local_ref]
-                        sidebar_list_box -> gtk::ListBox {
-                            add_css_class: "navigation-sidebar",
-                            set_margin_all: 6,
-                        },
-                    },
-                },
+            // Outer NavigationSplitView: Sidebar (Task Lists) vs Inner SplitView Container
+            adw::NavigationSplitView {
+                set_min_sidebar_width: 220.0,
+                set_max_sidebar_width: 280.0,
+                set_sidebar_width_fraction: 0.22,
 
                 #[wrap(Some)]
-                set_content = &gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-
-                    adw::HeaderBar {
-                        #[wrap(Some)]
-                        set_title_widget = &adw::WindowTitle {
-                            #[watch]
-                            set_title: &relm4::gtk::glib::markup_escape_text(model.list_title.trim()),
-                        },
-                        pack_end = &gtk::Box {
-                            set_orientation: gtk::Orientation::Horizontal,
-                            set_spacing: 6,
-
-                            gtk::Spinner {
-                                #[watch]
-                                set_spinning: model.is_syncing,
-                                #[watch]
-                                set_visible: model.is_syncing,
-                            },
-
-                            gtk::Button {
-                                set_icon_name: "view-refresh-symbolic",
-                                set_tooltip_text: Some("Sync with Google Tasks"),
-                                #[watch]
-                                set_sensitive: !model.is_syncing,
-                                connect_clicked => AppInput::SyncWithGoogle,
-                            },
-
-                            gtk::Button {
-                                set_icon_name: "user-trash-symbolic",
-                                set_tooltip_text: Some("Delete active task list"),
-                                connect_clicked => AppInput::DeleteCurrentList,
-                            },
-                        },
-                    },
-
-                    gtk::Box {
+                set_sidebar = &adw::NavigationPage {
+                    set_title: "Task Lists",
+                    set_tag: Some("sidebar"),
+                    #[wrap(Some)]
+                    set_child = &gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
-                        set_margin_start: 12,
-                        set_margin_end: 12,
-                        set_margin_top: 12,
-                        set_margin_bottom: 4,
 
-                        gtk::Entry {
-                            set_placeholder_text: Some("➕ Add a new task... (press Enter)"),
-                            set_buffer: &model.entry_buffer,
-                            connect_activate => AppInput::AddTask,
+                        adw::HeaderBar {
+                            set_show_start_title_buttons: false,
+                            set_show_end_title_buttons: false,
+                            #[wrap(Some)]
+                            set_title_widget = &adw::WindowTitle {
+                                set_title: "Task Lists",
+                            },
+                            pack_end = &gtk::Button {
+                                set_icon_name: "list-add-symbolic",
+                                set_tooltip_text: Some("Create new task list"),
+                                connect_clicked => AppInput::ToggleNewListEntry,
+                            },
                         },
-                    },
-
-                    gtk::ScrolledWindow {
-                        set_vexpand: true,
-                        set_hexpand: true,
 
                         gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
-                            set_margin_all: 12,
-                            set_spacing: 12,
+                            #[watch]
+                            set_visible: model.show_new_list_entry,
+
+                            gtk::Entry {
+                                set_placeholder_text: Some("New list name..."),
+                                set_margin_all: 6,
+                                set_buffer: &model.new_list_buffer,
+                                connect_activate => AppInput::CreateTaskList,
+                            },
+                        },
+
+                        gtk::ScrolledWindow {
+                            set_vexpand: true,
+                            set_hexpand: true,
 
                             #[local_ref]
-                            task_list_box -> gtk::ListBox {
-                                add_css_class: "boxed-list",
+                            sidebar_list_box -> gtk::ListBox {
+                                add_css_class: "navigation-sidebar",
+                                set_margin_all: 6,
                             },
+                        },
+                    },
+                },
 
-                            gtk::Expander {
-                                #[watch]
-                                set_label: Some(&format!("Completed ({})", model.completed_tasks.len())),
-                                #[watch]
-                                set_visible: !model.completed_tasks.is_empty(),
+                #[wrap(Some)]
+                set_content = &adw::NavigationPage {
+                    set_title: "Tasks",
+                    set_tag: Some("content_container"),
+                    #[wrap(Some)]
+                    set_child = &adw::NavigationSplitView {
+                        set_min_sidebar_width: 380.0,
+                        set_max_sidebar_width: 650.0,
+                        set_sidebar_width_fraction: 0.58,
 
-                                #[local_ref]
-                                completed_task_list_box -> gtk::ListBox {
-                                    add_css_class: "boxed-list",
-                                    set_margin_top: 6,
+                        // Inner NavigationSplitView Sidebar: Center Pane (Active Task List)
+                        #[wrap(Some)]
+                        set_sidebar = &adw::NavigationPage {
+                            set_title: "Task List",
+                            set_tag: Some("task_list"),
+                            #[wrap(Some)]
+                            set_child = &gtk::Box {
+                                set_orientation: gtk::Orientation::Vertical,
+                                set_hexpand: true,
+
+                                adw::HeaderBar {
+                                    set_show_start_title_buttons: false,
+                                    set_show_end_title_buttons: false,
+                                    #[wrap(Some)]
+                                    set_title_widget = &adw::WindowTitle {
+                                        #[watch]
+                                        set_title: &relm4::gtk::glib::markup_escape_text(model.list_title.trim()),
+                                    },
+                                    pack_end = &gtk::Box {
+                                        set_orientation: gtk::Orientation::Horizontal,
+                                        set_spacing: 6,
+
+                                        gtk::Spinner {
+                                            #[watch]
+                                            set_spinning: model.is_syncing,
+                                            #[watch]
+                                            set_visible: model.is_syncing,
+                                        },
+
+                                        gtk::Button {
+                                            set_icon_name: "view-refresh-symbolic",
+                                            set_tooltip_text: Some("Sync with Google Tasks"),
+                                            #[watch]
+                                            set_sensitive: !model.is_syncing,
+                                            connect_clicked => AppInput::SyncWithGoogle,
+                                        },
+
+                                        gtk::Button {
+                                            set_icon_name: "user-trash-symbolic",
+                                            set_tooltip_text: Some("Delete active task list"),
+                                            connect_clicked => AppInput::DeleteCurrentList,
+                                        },
+                                    },
+                                },
+
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Vertical,
+                                    set_margin_start: 12,
+                                    set_margin_end: 12,
+                                    set_margin_top: 12,
+                                    set_margin_bottom: 4,
+
+                                    gtk::Entry {
+                                        set_placeholder_text: Some("➕ Add task... (e.g. Buy milk tomorrow)"),
+                                        set_buffer: &model.entry_buffer,
+                                        connect_activate => AppInput::AddTask,
+                                    },
+                                },
+
+                                gtk::ScrolledWindow {
+                                    set_vexpand: true,
+                                    set_hexpand: true,
+
+                                    gtk::Box {
+                                        set_orientation: gtk::Orientation::Vertical,
+                                        set_margin_all: 12,
+                                        set_spacing: 12,
+
+                                        #[local_ref]
+                                        task_list_box -> gtk::ListBox {
+                                            add_css_class: "boxed-list",
+                                        },
+
+                                        gtk::Expander {
+                                            #[watch]
+                                            set_label: Some(&format!("Completed ({})", model.completed_tasks.len())),
+                                            #[watch]
+                                            set_visible: !model.completed_tasks.is_empty(),
+
+                                            #[local_ref]
+                                            completed_task_list_box -> gtk::ListBox {
+                                                add_css_class: "boxed-list",
+                                                set_margin_top: 6,
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+
+                        // Inner NavigationSplitView Content: Inspector Panel (Right Pane with Primary Window Controls)
+                        #[wrap(Some)]
+                        set_content = &adw::NavigationPage {
+                            set_title: "Task Details",
+                            set_tag: Some("inspector"),
+                            #[wrap(Some)]
+                            set_child = &gtk::Box {
+                                set_orientation: gtk::Orientation::Vertical,
+                                set_width_request: 320,
+
+                                adw::HeaderBar {
+                                    set_show_start_title_buttons: false,
+                                    set_show_end_title_buttons: true,
+                                    #[wrap(Some)]
+                                    set_title_widget = &adw::WindowTitle {
+                                        set_title: "Task Details",
+                                    },
+                                },
+
+                                adw::PreferencesPage {
+                                    adw::PreferencesGroup {
+                                        set_title: "Task Information",
+
+                                        adw::ActionRow {
+                                            set_title: "Title",
+                                            add_suffix = &gtk::Entry {
+                                                set_buffer: &model.detail_title_buffer,
+                                                set_valign: gtk::Align::Center,
+                                                set_hexpand: true,
+                                            },
+                                        },
+
+                                        adw::ActionRow {
+                                            set_title: "Due Date",
+                                            add_suffix = &gtk::Entry {
+                                                set_placeholder_text: Some("YYYY-MM-DD"),
+                                                set_buffer: &model.detail_due_buffer,
+                                                set_valign: gtk::Align::Center,
+                                                set_hexpand: true,
+                                            },
+                                        },
+                                    },
+
+                                    adw::PreferencesGroup {
+                                        set_title: "Notes",
+
+                                        gtk::ScrolledWindow {
+                                            set_min_content_height: 120,
+                                            set_margin_all: 6,
+
+                                            gtk::TextView {
+                                                set_buffer: Some(&model.detail_notes_buffer),
+                                                set_wrap_mode: gtk::WrapMode::Word,
+                                            },
+                                        },
+                                    },
+
+                                    adw::PreferencesGroup {
+                                        set_title: "Actions",
+
+                                        adw::ActionRow {
+                                            set_title: "Save Changes",
+                                            add_suffix = &gtk::Button {
+                                                set_label: "Save",
+                                                add_css_class: "suggested-action",
+                                                set_valign: gtk::Align::Center,
+                                                connect_clicked => AppInput::SaveTaskDetails,
+                                            },
+                                        },
+
+                                        adw::ActionRow {
+                                            set_title: "Delete Task",
+                                            add_suffix = &gtk::Button {
+                                                set_label: "Delete",
+                                                add_css_class: "destructive-action",
+                                                set_valign: gtk::Align::Center,
+                                                connect_clicked => AppInput::DeleteCurrentTaskDetails,
+                                            },
+                                        },
+                                    },
                                 },
                             },
                         },
@@ -489,12 +611,11 @@ impl SimpleComponent for AppModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let db_path = "task_lists.db";
-        println!("[GUI DB LOG] Opening DB at: {:?}", db_path);
 
         let db = match Database::new(db_path) {
             Ok(db) => Some(db),
             Err(err) => {
-                eprintln!("[GUI DB LOG] Error opening DB: {:?}", err);
+                tracing::error!("[GUI DB LOG] Error opening DB: {:?}", err);
                 None
             }
         };
@@ -522,7 +643,7 @@ impl SimpleComponent for AppModel {
                     }
                 }
                 Err(err) => {
-                    eprintln!("Error fetching task lists: {:?}", err);
+                    tracing::error!("Error fetching task lists: {:?}", err);
                 }
             }
 
@@ -531,7 +652,7 @@ impl SimpleComponent for AppModel {
                     initial_tasks = tasks;
                 }
                 Err(err) => {
-                    eprintln!("Error fetching tasks for list {}: {:?}", list_id, err);
+                    tracing::error!("Error fetching tasks for list {}: {:?}", list_id, err);
                 }
             }
         }
@@ -611,7 +732,6 @@ impl SimpleComponent for AppModel {
             show_new_list_entry: false,
             is_syncing: false,
             editing_task_id: None,
-            show_detail_window: false,
             detail_title_buffer,
             detail_due_buffer,
             detail_notes_buffer,
@@ -653,15 +773,12 @@ impl SimpleComponent for AppModel {
                 self.detail_title_buffer.set_text(&title);
                 self.detail_due_buffer.set_text(&due_str);
                 self.detail_notes_buffer.set_text(&notes);
-                self.show_detail_window = true;
-            }
-            AppInput::CloseTaskDetails => {
-                self.show_detail_window = false;
-                self.editing_task_id = None;
             }
             AppInput::DeleteCurrentTaskDetails => {
                 if let Some(id) = self.editing_task_id.take() {
-                    self.show_detail_window = false;
+                    self.detail_title_buffer.set_text("");
+                    self.detail_due_buffer.set_text("");
+                    self.detail_notes_buffer.set_text("");
                     sender.input(AppInput::DeleteTask(id));
                 }
             }
@@ -670,7 +787,7 @@ impl SimpleComponent for AppModel {
                 sender.input(AppInput::DeleteList(list_id));
             }
             AppInput::SaveTaskDetails => {
-                if let Some(id) = self.editing_task_id.take() {
+                if let Some(ref id) = self.editing_task_id.clone() {
                     let title_text = self.detail_title_buffer.text().to_string();
                     let title_trimmed = title_text.trim().to_string();
                     let notes_text = self
@@ -700,7 +817,7 @@ impl SimpleComponent for AppModel {
 
                     if let Some(ref db) = self.db {
                         if let Ok(tasks) = db.get_tasks_for_list(&self.list_id) {
-                            if let Some(task) = tasks.iter().find(|t| t.id == id) {
+                            if let Some(task) = tasks.iter().find(|t| t.id == *id) {
                                 is_completed_status = task.is_completed;
                                 parent_id = task.parent.clone();
                             }
@@ -733,7 +850,7 @@ impl SimpleComponent for AppModel {
                         };
 
                         if let Err(err) = db.save_tasks(&[updated_task]) {
-                            eprintln!("Failed to save task details to SQLite: {}", err);
+                            tracing::error!("Failed to save task details to SQLite: {}", err);
                         }
                     }
 
@@ -749,7 +866,7 @@ impl SimpleComponent for AppModel {
                         title_trimmed
                     };
 
-                    let active_pos = self.tasks.guard().iter().position(|r| r.id == id);
+                    let active_pos = self.tasks.guard().iter().position(|r| r.id == *id);
                     if let Some(pos) = active_pos {
                         let mut guard = self.tasks.guard();
                         if let Some(row) = guard.get_mut(pos) {
@@ -760,7 +877,7 @@ impl SimpleComponent for AppModel {
                     }
 
                     let completed_pos =
-                        self.completed_tasks.guard().iter().position(|r| r.id == id);
+                        self.completed_tasks.guard().iter().position(|r| r.id == *id);
                     if let Some(pos) = completed_pos {
                         let mut guard = self.completed_tasks.guard();
                         if let Some(row) = guard.get_mut(pos) {
@@ -770,14 +887,13 @@ impl SimpleComponent for AppModel {
                         }
                     }
 
-                    self.show_detail_window = false;
                     sender.input(AppInput::SyncWithGoogle);
                 }
             }
             AppInput::DeleteTask(id) => {
                 if let Some(ref db) = self.db {
                     if let Err(err) = db.mark_task_deleted(&id) {
-                        eprintln!("Failed to mark task deleted in SQLite: {}", err);
+                        tracing::error!("Failed to mark task deleted in SQLite: {}", err);
                     }
                 }
 
@@ -796,7 +912,7 @@ impl SimpleComponent for AppModel {
             AppInput::DeleteList(list_id) => {
                 if let Some(ref db) = self.db {
                     if let Err(err) = db.delete_task_list_db(&list_id) {
-                        eprintln!("Failed to delete task list from SQLite: {}", err);
+                        tracing::error!("Failed to delete task list from SQLite: {}", err);
                     }
                 }
 
@@ -874,7 +990,7 @@ impl SimpleComponent for AppModel {
                     let new_tasks = match db.get_tasks_for_list(&self.list_id) {
                         Ok(tasks) => tasks,
                         Err(err) => {
-                            eprintln!(
+                            tracing::error!(
                                 "Failed to fetch tasks on refresh for list {}: {}",
                                 self.list_id, err
                             );
@@ -909,7 +1025,7 @@ impl SimpleComponent for AppModel {
 
                     if let Some(ref db) = self.db {
                         if let Err(err) = db.save_task_lists(std::slice::from_ref(&new_list)) {
-                            eprintln!("Failed to save new task list to SQLite: {}", err);
+                            tracing::error!("Failed to save new task list to SQLite: {}", err);
                         }
                     }
 
@@ -942,7 +1058,7 @@ impl SimpleComponent for AppModel {
                     let new_tasks = match db.get_tasks_for_list(&self.list_id) {
                         Ok(tasks) => tasks,
                         Err(err) => {
-                            eprintln!("Failed to fetch tasks for list {}: {}", self.list_id, err);
+                            tracing::error!("Failed to fetch tasks for list {}: {}", self.list_id, err);
                             Vec::new()
                         }
                     };
@@ -954,8 +1070,8 @@ impl SimpleComponent for AppModel {
             }
             AppInput::AddTask => {
                 let text = self.entry_buffer.text().to_string();
-                let trimmed = text.trim();
-                if !trimmed.is_empty() {
+                let (clean_title, due_dt) = parse_nlp_task(&text);
+                if !clean_title.is_empty() {
                     let task_id = format!(
                         "local_{}",
                         std::time::SystemTime::now()
@@ -967,10 +1083,10 @@ impl SimpleComponent for AppModel {
                     let task_local = TaskLocal {
                         id: task_id.clone(),
                         list_id: self.list_id.clone(),
-                        title: Some(trimmed.to_string()),
+                        title: Some(clean_title.clone()),
                         is_completed: false,
                         notes: None,
-                        due: None,
+                        due: due_dt,
                         completed: None,
                         parent: None,
                         updated: Some(chrono::Utc::now()),
@@ -980,15 +1096,17 @@ impl SimpleComponent for AppModel {
 
                     if let Some(ref db) = self.db {
                         if let Err(err) = db.save_tasks(&[task_local]) {
-                            eprintln!("Failed to save task to SQLite: {}", err);
+                            tracing::error!("Failed to save task to SQLite: {}", err);
                         }
                     }
 
+                    let due_str_formatted = due_dt.map(|d| d.format("%Y-%m-%d").to_string());
+
                     self.tasks.guard().push_back(TaskRowInit {
                         id: task_id,
-                        title: trimmed.to_string(),
+                        title: clean_title,
                         notes: None,
-                        due_str: None,
+                        due_str: due_str_formatted,
                         parent: None,
                         is_subtask: false,
                         is_completed: false,
@@ -1027,7 +1145,7 @@ impl SimpleComponent for AppModel {
                             is_deleted: false,
                         };
                         if let Err(err) = db.save_tasks(&[updated_task]) {
-                            eprintln!("Failed to update task completion in SQLite: {}", err);
+                            tracing::error!("Failed to update task completion in SQLite: {}", err);
                         }
                     }
 
@@ -1097,7 +1215,7 @@ impl SimpleComponent for AppModel {
                             is_deleted: false,
                         };
                         if let Err(err) = db.save_tasks(&[updated_task]) {
-                            eprintln!("Failed to update task uncompleted state in SQLite: {}", err);
+                            tracing::error!("Failed to update task uncompleted state in SQLite: {}", err);
                         }
                     }
 
@@ -1133,4 +1251,34 @@ fn main() {
         ",
     );
     app.run::<AppModel>(());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_nlp_task_today_tomorrow() {
+        let (title1, due1) = parse_nlp_task("Buy milk today");
+        assert_eq!(title1, "Buy milk");
+        assert!(due1.is_some());
+
+        let (title2, due2) = parse_nlp_task("Finish report tomorrow");
+        assert_eq!(title2, "Finish report");
+        assert!(due2.is_some());
+    }
+
+    #[test]
+    fn test_parse_nlp_task_weekday() {
+        let (title, due) = parse_nlp_task("Team sync next monday");
+        assert_eq!(title, "Team sync");
+        assert!(due.is_some());
+    }
+
+    #[test]
+    fn test_parse_nlp_task_no_date() {
+        let (title, due) = parse_nlp_task("Read documentation");
+        assert_eq!(title, "Read documentation");
+        assert!(due.is_none());
+    }
 }
