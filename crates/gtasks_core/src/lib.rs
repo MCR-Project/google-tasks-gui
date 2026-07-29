@@ -1,44 +1,14 @@
-mod api;
-mod auth;
-mod db;
-mod ui;
+pub mod api;
+pub mod auth;
+pub mod db;
 
-use api::{GoogleTasksClient, TaskLocal};
-use db::Database;
+pub use api::{GoogleTasksClient, TaskList, TaskLocal};
+pub use db::Database;
+use futures::future::join_all;
 use std::error::Error;
 
-fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
-    dotenvy::dotenv().ok();
-
-    println!("🚀 Starting gTasks Terminal TUI...\n");
-
-    let rt = tokio::runtime::Runtime::new()?;
-
-    // Step 1 & 2: Authenticate and initialize SQLite DB
-    let (mut client, mut db) = rt.block_on(async {
-        let client = obtain_authenticated_client().await?;
-        let db = Database::new("task_lists.db")?;
-        Ok::<(GoogleTasksClient, Database), Box<dyn Error + Send + Sync>>((client, db))
-    })?;
-
-    // Step 3: Synchronize remote & local data on startup
-    println!("🔄 Syncing data with Google Tasks API...");
-    rt.block_on(async {
-        let _ = sync_remote_to_db(&mut client, &mut db).await;
-        let _ = sync_local_to_db(&mut client, &mut db).await;
-    });
-
-    // Step 4: Run TUI Interface
-    rt.block_on(async {
-        ui::run(&mut client, &mut db).await
-    })?;
-
-    println!("\n✨ Thank you for using gTasks!");
-    Ok(())
-}
-
 /// Resolves authentication by checking Keyring first, falling back to OAuth PKCE.
-async fn obtain_authenticated_client() -> Result<GoogleTasksClient, Box<dyn Error + Send + Sync>> {
+pub async fn obtain_authenticated_client() -> Result<GoogleTasksClient, Box<dyn Error + Send + Sync>> {
     let token_response = if let Ok(refresh_token) = auth::keyring::get_refresh_token() {
         println!("🔐 Found saved refresh token in OS keyring. Refreshing access token...");
         auth::refresh_access_token(&refresh_token).await?
@@ -59,8 +29,6 @@ async fn obtain_authenticated_client() -> Result<GoogleTasksClient, Box<dyn Erro
 
     Ok(GoogleTasksClient::new(token_response.access_token))
 }
-
-use futures::future::join_all;
 
 /// Fetches task lists and tasks from Google API in parallel and caches them into SQLite.
 pub async fn sync_remote_to_db(

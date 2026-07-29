@@ -1,0 +1,13 @@
+[package]
+name = "gtasks_tui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+gtasks_core = { path = "../gtasks_core" }
+tokio = { version = "1.53.1", features = ["full"] }
+dotenvy = "0.15"
+ratatui = "0.30.2"
+crossterm = "0.29.0"
+chrono = { version = "0.4.45", features = ["serde"] }
+futures = "0.3"

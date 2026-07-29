@@ -1,4 +1,4 @@
-use crate::api::{TaskList, TaskLocal};
+use gtasks_core::{TaskList, TaskLocal};
 
 pub mod draw;
 pub mod run;

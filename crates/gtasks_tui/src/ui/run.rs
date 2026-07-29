@@ -8,8 +8,7 @@ use crossterm::{
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
-use crate::api::GoogleTasksClient;
-use crate::db::Database;
+use gtasks_core::{sync_local_to_db, sync_remote_to_db, Database, GoogleTasksClient};
 use crate::ui::{App, EditAction, InputMode};
 
 /// Main TUI Terminal Controller & Event Loop
@@ -94,8 +93,8 @@ pub async fn run(
                             KeyCode::Char('r') => {
                                 app.status_message = "Syncing with Google Tasks...".to_string();
                                 terminal.draw(|f| crate::ui::draw::draw(f, &app))?;
-                                let _ = crate::sync_local_to_db(client, db).await;
-                                let _ = crate::sync_remote_to_db(client, db).await;
+                                let _ = sync_local_to_db(client, db).await;
+                                let _ = sync_remote_to_db(client, db).await;
 
                                 // Reload lists and tasks from SQLite after sync
                                 if let Ok(updated_lists) = db.get_task_lists() {
