@@ -554,9 +554,12 @@ impl SimpleComponent for AppModel {
                             is_deleted: false,
                         };
 
-                        if let Err(err) = db.save_tasks(&[updated_task]) {
-                            tracing::error!("Failed to save task details to SQLite: {}", err);
-                        }
+                        let db_clone = db.clone();
+                        tokio::task::spawn_blocking(move || {
+                            if let Err(err) = db_clone.save_tasks(&[updated_task]) {
+                                tracing::error!("Failed to save task details to SQLite: {}", err);
+                            }
+                        });
                     }
 
                     let due_str_formatted = due_dt.map(|d| d.format("%Y-%m-%d").to_string());
@@ -597,9 +600,13 @@ impl SimpleComponent for AppModel {
             }
             AppInput::DeleteTask(id) => {
                 if let Some(ref db) = self.db {
-                    if let Err(err) = db.mark_task_deleted(&id) {
-                        tracing::error!("Failed to mark task deleted in SQLite: {}", err);
-                    }
+                    let db_clone = db.clone();
+                    let id_clone = id.clone();
+                    tokio::task::spawn_blocking(move || {
+                        if let Err(err) = db_clone.mark_task_deleted(&id_clone) {
+                            tracing::error!("Failed to mark task deleted in SQLite: {}", err);
+                        }
+                    });
                 }
 
                 let active_pos = self.tasks.guard().iter().position(|r| r.id == id);
@@ -616,9 +623,13 @@ impl SimpleComponent for AppModel {
             }
             AppInput::DeleteList(list_id) => {
                 if let Some(ref db) = self.db {
-                    if let Err(err) = db.delete_task_list_db(&list_id) {
-                        tracing::error!("Failed to delete task list from SQLite: {}", err);
-                    }
+                    let db_clone = db.clone();
+                    let list_id_clone = list_id.clone();
+                    tokio::task::spawn_blocking(move || {
+                        if let Err(err) = db_clone.delete_task_list_db(&list_id_clone) {
+                            tracing::error!("Failed to delete task list from SQLite: {}", err);
+                        }
+                    });
                 }
 
                 let pos = self
@@ -647,7 +658,11 @@ impl SimpleComponent for AppModel {
                             updated: None,
                         };
                         if let Some(ref db) = self.db {
-                            let _ = db.save_task_lists(std::slice::from_ref(&default_list));
+                            let db_clone = db.clone();
+                            let default_list_clone = default_list.clone();
+                            tokio::task::spawn_blocking(move || {
+                                let _ = db_clone.save_task_lists(std::slice::from_ref(&default_list_clone));
+                            });
                         }
                         self.task_lists = vec![default_list];
                         sender.input(AppInput::SelectTaskList(default_id));
@@ -722,9 +737,13 @@ impl SimpleComponent for AppModel {
                     };
 
                     if let Some(ref db) = self.db {
-                        if let Err(err) = db.save_task_lists(std::slice::from_ref(&new_list)) {
-                            tracing::error!("Failed to save new task list to SQLite: {}", err);
-                        }
+                        let db_clone = db.clone();
+                        let new_list_clone = new_list.clone();
+                        tokio::task::spawn_blocking(move || {
+                            if let Err(err) = db_clone.save_task_lists(std::slice::from_ref(&new_list_clone)) {
+                                tracing::error!("Failed to save new task list to SQLite: {}", err);
+                            }
+                        });
                     }
 
                     self.task_lists.push(new_list);
@@ -793,9 +812,13 @@ impl SimpleComponent for AppModel {
                     };
 
                     if let Some(ref db) = self.db {
-                        if let Err(err) = db.save_tasks(&[task_local]) {
-                            tracing::error!("Failed to save task to SQLite: {}", err);
-                        }
+                        let db_clone = db.clone();
+                        let task_local_clone = task_local.clone();
+                        tokio::task::spawn_blocking(move || {
+                            if let Err(err) = db_clone.save_tasks(&[task_local_clone]) {
+                                tracing::error!("Failed to save task to SQLite: {}", err);
+                            }
+                        });
                     }
 
                     let due_str_formatted = due_dt.map(|d| d.format("%Y-%m-%d").to_string());
@@ -842,6 +865,7 @@ impl SimpleComponent for AppModel {
                     }
 
                     if let Some(ref db) = self.db {
+                        let db_clone = db.clone();
                         let updated_task = TaskLocal {
                             id: task_id,
                             list_id: self.list_id.clone(),
@@ -859,9 +883,11 @@ impl SimpleComponent for AppModel {
                             is_dirty: true,
                             is_deleted: false,
                         };
-                        if let Err(err) = db.save_tasks(&[updated_task]) {
-                            tracing::error!("Failed to update task completion in SQLite: {}", err);
-                        }
+                        tokio::task::spawn_blocking(move || {
+                            if let Err(err) = db_clone.save_tasks(&[updated_task]) {
+                                tracing::error!("Failed to update task completion in SQLite: {}", err);
+                            }
+                        });
                     }
 
                     if is_completed {
@@ -933,6 +959,7 @@ impl SimpleComponent for AppModel {
                     }
 
                     if let Some(ref db) = self.db {
+                        let db_clone = db.clone();
                         let updated_task = TaskLocal {
                             id: task_id.clone(),
                             list_id: self.list_id.clone(),
@@ -946,9 +973,11 @@ impl SimpleComponent for AppModel {
                             is_dirty: true,
                             is_deleted: false,
                         };
-                        if let Err(err) = db.save_tasks(&[updated_task]) {
-                            tracing::error!("Failed to update task uncompleted state in SQLite: {}", err);
-                        }
+                        tokio::task::spawn_blocking(move || {
+                            if let Err(err) = db_clone.save_tasks(&[updated_task]) {
+                                tracing::error!("Failed to update task uncompleted state in SQLite: {}", err);
+                            }
+                        });
                     }
 
                     self.tasks.guard().push_back(TaskRowInit {

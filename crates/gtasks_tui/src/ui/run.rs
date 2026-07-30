@@ -26,7 +26,9 @@ impl Drop for TerminalGuard {
 #[derive(Debug)]
 pub enum BackgroundAction {
     TriggerFullSync,
-    SyncLocalChanges,
+    SaveTask(gtasks_core::api::TaskLocal),
+    DeleteTask(String),
+    SaveTaskList(TaskList),
     CreateTaskList(String),
 }
 
@@ -70,10 +72,27 @@ pub async fn run(
                     let _ = sync_remote_to_db(&mut bg_client, &mut bg_db).await;
                     let _ = result_tx.send("Synced with Google Tasks API! ✅".to_string());
                 }
-                BackgroundAction::SyncLocalChanges => {
+                BackgroundAction::SaveTask(task) => {
+                    let _ = bg_db.save_tasks(std::slice::from_ref(&task));
                     let _ = sync_local_to_db(&mut bg_client, &mut bg_db).await;
                     let _ = sync_remote_to_db(&mut bg_client, &mut bg_db).await;
-                    let _ = result_tx.send("Synced local changes! ✅".to_string());
+                    let _ = result_tx.send("Task saved & synced! ✅".to_string());
+                }
+                BackgroundAction::DeleteTask(task_id) => {
+                    if task_id.starts_with("local_") {
+                        let _ = bg_db.purge_task(&task_id);
+                    } else {
+                        let _ = bg_db.mark_task_deleted(&task_id);
+                    }
+                    let _ = sync_local_to_db(&mut bg_client, &mut bg_db).await;
+                    let _ = sync_remote_to_db(&mut bg_client, &mut bg_db).await;
+                    let _ = result_tx.send("Task deleted & synced! ✅".to_string());
+                }
+                BackgroundAction::SaveTaskList(list) => {
+                    let _ = bg_db.save_task_lists(std::slice::from_ref(&list));
+                    let _ = sync_local_to_db(&mut bg_client, &mut bg_db).await;
+                    let _ = sync_remote_to_db(&mut bg_client, &mut bg_db).await;
+                    let _ = result_tx.send(format!("Saved Task List '{}' ✅", list.title));
                 }
                 BackgroundAction::CreateTaskList(title) => {
                     match bg_client.create_task_list(&title).await {
@@ -155,8 +174,7 @@ pub async fn run(
                             KeyCode::Char(' ') => {
                                 app.toggle_selected_task();
                                 if let Some(task) = app.selected_task() {
-                                    let _ = db.save_tasks(std::slice::from_ref(task));
-                                    let _ = action_tx.send(BackgroundAction::SyncLocalChanges);
+                                    let _ = action_tx.send(BackgroundAction::SaveTask(task.clone()));
                                 }
                             }
                             KeyCode::Char('c') => app.start_create_task(),
@@ -169,12 +187,7 @@ pub async fn run(
                             KeyCode::Char('d') | KeyCode::Delete => {
                                 if let Some(removed) = app.delete_selected_task() {
                                     if !removed.id.is_empty() {
-                                        if removed.id.starts_with("local_") {
-                                            let _ = db.purge_task(&removed.id);
-                                        } else {
-                                            let _ = db.mark_task_deleted(&removed.id);
-                                        }
-                                        let _ = action_tx.send(BackgroundAction::SyncLocalChanges);
+                                        let _ = action_tx.send(BackgroundAction::DeleteTask(removed.id.clone()));
                                     }
                                 }
                             }
@@ -204,8 +217,7 @@ pub async fn run(
                                             title: list_name.clone(),
                                             updated: Some(chrono::Utc::now().to_rfc3339()),
                                         };
-                                        let _ =
-                                            db.save_task_lists(std::slice::from_ref(&new_list));
+                                        let _ = action_tx.send(BackgroundAction::SaveTaskList(new_list.clone()));
                                         app.task_lists.push(new_list);
                                         app.selected_list_idx = app.task_lists.len() - 1;
                                         app.tasks.clear();
@@ -218,10 +230,9 @@ pub async fn run(
                                 } else {
                                     app.submit_input();
                                     if let Some(task) = app.selected_task() {
-                                        let _ = db.save_tasks(std::slice::from_ref(task));
+                                        let _ = action_tx.send(BackgroundAction::SaveTask(task.clone()));
                                     }
                                     app.status_message = "Saving & syncing task...".to_string();
-                                    let _ = action_tx.send(BackgroundAction::SyncLocalChanges);
                                 }
                             }
                             KeyCode::Esc => {
