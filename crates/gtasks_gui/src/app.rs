@@ -458,145 +458,139 @@ impl SimpleComponent for AppModel {
         match message {
             AppInput::OpenTaskDetails(id) => {
                 self.editing_task_id = Some(id.clone());
-                let mut title = String::new();
-                let mut notes = String::new();
-                let mut due_str = String::new();
 
-                if let Some(ref db) = self.db {
-                    if let Ok(tasks) = db.get_tasks_for_list(&self.list_id) {
-                        if let Some(task) = tasks.iter().find(|t| t.id == id) {
-                            title = task.title.as_deref().unwrap_or("").to_string();
-                            notes = task.notes.as_deref().unwrap_or("").to_string();
-                            due_str = task
-                                .due
-                                .map(|d| d.format("%Y-%m-%d").to_string())
-                                .unwrap_or_default();
-                        }
-                    }
-                }
+                let (title, notes, due_str) = self
+                    .db
+                    .as_ref()
+                    .and_then(|db| db.get_tasks_for_list(&self.list_id).ok())
+                    .and_then(|tasks| tasks.into_iter().find(|t| t.id == id))
+                    .map(|task| {
+                        (
+                            task.title.unwrap_or_default(),
+                            task.notes.unwrap_or_default(),
+                            task.due.map(|d| d.format("%Y-%m-%d").to_string()).unwrap_or_default(),
+                        )
+                    })
+                    .unwrap_or_default();
 
                 self.detail_title_buffer.set_text(&title);
                 self.detail_due_buffer.set_text(&due_str);
                 self.detail_notes_buffer.set_text(&notes);
             }
             AppInput::DeleteCurrentTaskDetails => {
-                if let Some(id) = self.editing_task_id.take() {
-                    self.detail_title_buffer.set_text("");
-                    self.detail_due_buffer.set_text("");
-                    self.detail_notes_buffer.set_text("");
-                    sender.input(AppInput::DeleteTask(id));
-                }
+                let Some(id) = self.editing_task_id.take() else { return; };
+                self.detail_title_buffer.set_text("");
+                self.detail_due_buffer.set_text("");
+                self.detail_notes_buffer.set_text("");
+                sender.input(AppInput::DeleteTask(id));
             }
             AppInput::DeleteCurrentList => {
                 let list_id = self.list_id.clone();
                 sender.input(AppInput::DeleteList(list_id));
             }
             AppInput::SaveTaskDetails => {
-                if let Some(ref id) = self.editing_task_id.clone() {
-                    let title_text = self.detail_title_buffer.text().to_string();
-                    let title_trimmed = title_text.trim().to_string();
-                    let notes_text = self
-                        .detail_notes_buffer
-                        .text(
-                            &self.detail_notes_buffer.start_iter(),
-                            &self.detail_notes_buffer.end_iter(),
-                            false,
+                let Some(ref id) = self.editing_task_id.clone() else { return; };
+                let title_text = self.detail_title_buffer.text().to_string();
+                let title_trimmed = title_text.trim().to_string();
+                let notes_text = self
+                    .detail_notes_buffer
+                    .text(
+                        &self.detail_notes_buffer.start_iter(),
+                        &self.detail_notes_buffer.end_iter(),
+                        false,
+                    )
+                    .to_string();
+                let notes_trimmed = notes_text.trim().to_string();
+                let due_text = self.detail_due_buffer.text().to_string();
+                let due_trimmed = due_text.trim();
+
+                let due_dt = chrono::NaiveDate::parse_from_str(due_trimmed, "%Y-%m-%d")
+                    .ok()
+                    .and_then(|nd| nd.and_hms_opt(0, 0, 0))
+                    .map(|dt| {
+                        chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
+                            dt,
+                            chrono::Utc,
                         )
-                        .to_string();
-                    let notes_trimmed = notes_text.trim().to_string();
-                    let due_text = self.detail_due_buffer.text().to_string();
-                    let due_trimmed = due_text.trim();
+                    });
 
-                    let due_dt = chrono::NaiveDate::parse_from_str(due_trimmed, "%Y-%m-%d")
-                        .ok()
-                        .and_then(|nd| nd.and_hms_opt(0, 0, 0))
-                        .map(|dt| {
-                            chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
-                                dt,
-                                chrono::Utc,
-                            )
-                        });
+                let (is_completed_status, parent_id) = self
+                    .db
+                    .as_ref()
+                    .and_then(|db| db.get_tasks_for_list(&self.list_id).ok())
+                    .and_then(|tasks| tasks.into_iter().find(|t| t.id == *id))
+                    .map(|t| (t.is_completed, t.parent))
+                    .unwrap_or((false, None));
 
-                    let mut is_completed_status = false;
-                    let mut parent_id = None;
-
-                    if let Some(ref db) = self.db {
-                        if let Ok(tasks) = db.get_tasks_for_list(&self.list_id) {
-                            if let Some(task) = tasks.iter().find(|t| t.id == *id) {
-                                is_completed_status = task.is_completed;
-                                parent_id = task.parent.clone();
-                            }
-                        }
-
-                        let updated_task = TaskLocal {
-                            id: id.clone(),
-                            list_id: self.list_id.clone(),
-                            title: if title_trimmed.is_empty() {
-                                None
-                            } else {
-                                Some(title_trimmed.clone())
-                            },
-                            is_completed: is_completed_status,
-                            notes: if notes_trimmed.is_empty() {
-                                None
-                            } else {
-                                Some(notes_trimmed.clone())
-                            },
-                            due: due_dt,
-                            completed: if is_completed_status {
-                                Some(chrono::Utc::now())
-                            } else {
-                                None
-                            },
-                            parent: parent_id,
-                            updated: Some(chrono::Utc::now()),
-                            is_dirty: true,
-                            is_deleted: false,
-                        };
-
-                        let db_clone = db.clone();
-                        tokio::task::spawn_blocking(move || {
-                            if let Err(err) = db_clone.save_tasks(&[updated_task]) {
-                                tracing::error!("Failed to save task details to SQLite: {}", err);
-                            }
-                        });
-                    }
-
-                    let due_str_formatted = due_dt.map(|d| d.format("%Y-%m-%d").to_string());
-                    let notes_opt = if notes_trimmed.is_empty() {
-                        None
-                    } else {
-                        Some(notes_trimmed)
-                    };
-                    let title_clean = if title_trimmed.is_empty() {
-                        "Untitled Task".to_string()
-                    } else {
-                        title_trimmed
+                if let Some(ref db) = self.db {
+                    let db_clone = db.clone();
+                    let updated_task = TaskLocal {
+                        id: id.clone(),
+                        list_id: self.list_id.clone(),
+                        title: if title_trimmed.is_empty() {
+                            None
+                        } else {
+                            Some(title_trimmed.clone())
+                        },
+                        is_completed: is_completed_status,
+                        notes: if notes_trimmed.is_empty() {
+                            None
+                        } else {
+                            Some(notes_trimmed.clone())
+                        },
+                        due: due_dt,
+                        completed: if is_completed_status {
+                            Some(chrono::Utc::now())
+                        } else {
+                            None
+                        },
+                        parent: parent_id,
+                        updated: Some(chrono::Utc::now()),
+                        is_dirty: true,
+                        is_deleted: false,
                     };
 
-                    let active_pos = self.tasks.guard().iter().position(|r| r.id == *id);
-                    if let Some(pos) = active_pos {
-                        let mut guard = self.tasks.guard();
-                        if let Some(row) = guard.get_mut(pos) {
-                            row.title = title_clean.clone();
-                            row.notes = notes_opt.clone();
-                            row.due_str = due_str_formatted.clone();
+                    tokio::task::spawn_blocking(move || {
+                        if let Err(err) = db_clone.save_tasks(&[updated_task]) {
+                            tracing::error!("Failed to save task details to SQLite: {}", err);
                         }
-                    }
-
-                    let completed_pos =
-                        self.completed_tasks.guard().iter().position(|r| r.id == *id);
-                    if let Some(pos) = completed_pos {
-                        let mut guard = self.completed_tasks.guard();
-                        if let Some(row) = guard.get_mut(pos) {
-                            row.title = title_clean;
-                            row.notes = notes_opt;
-                            row.due_str = due_str_formatted;
-                        }
-                    }
-
-                    sender.input(AppInput::SyncWithGoogle);
+                    });
                 }
+
+                let due_str_formatted = due_dt.map(|d| d.format("%Y-%m-%d").to_string());
+                let notes_opt = if notes_trimmed.is_empty() {
+                    None
+                } else {
+                    Some(notes_trimmed)
+                };
+                let title_clean = if title_trimmed.is_empty() {
+                    "Untitled Task".to_string()
+                } else {
+                    title_trimmed
+                };
+
+                let active_pos = self.tasks.guard().iter().position(|r| r.id == *id);
+                if let Some(pos) = active_pos {
+                    let mut guard = self.tasks.guard();
+                    if let Some(row) = guard.get_mut(pos) {
+                        row.title = title_clean.clone();
+                        row.notes = notes_opt.clone();
+                        row.due_str = due_str_formatted.clone();
+                    }
+                }
+
+                let completed_pos =
+                    self.completed_tasks.guard().iter().position(|r| r.id == *id);
+                if let Some(pos) = completed_pos {
+                    let mut guard = self.completed_tasks.guard();
+                    if let Some(row) = guard.get_mut(pos) {
+                        row.title = title_clean;
+                        row.notes = notes_opt;
+                        row.due_str = due_str_formatted;
+                    }
+                }
+
+                sender.input(AppInput::SyncWithGoogle);
             }
             AppInput::DeleteTask(id) => {
                 if let Some(ref db) = self.db {
@@ -839,157 +833,154 @@ impl SimpleComponent for AppModel {
             AppInput::ToggleActiveTask(index) => {
                 let idx = index.current_index();
                 let mut guard = self.tasks.guard();
-                if let Some(row) = guard.get_mut(idx) {
-                    row.is_completed = !row.is_completed;
-                    let task_id = row.id.clone();
-                    let is_completed = row.is_completed;
-                    let title = row.title.trim().to_string();
-                    let notes = row.notes.clone();
-                    let parent = row.parent.clone();
+                let Some(row) = guard.get_mut(idx) else { return; };
+                
+                row.is_completed = !row.is_completed;
+                let task_id = row.id.clone();
+                let is_completed = row.is_completed;
+                let title = row.title.trim().to_string();
+                let notes = row.notes.clone();
+                let parent = row.parent.clone();
 
-                    let mut existing_due = None;
-                    if let Some(ref db) = self.db {
-                        if let Ok(tasks) = db.get_tasks_for_list(&self.list_id) {
-                            if let Some(t) = tasks.iter().find(|t| t.id == task_id) {
-                                existing_due = t.due;
-                            }
-                        }
-                    }
-                    if existing_due.is_none() {
-                        existing_due = row.due_str.as_deref().and_then(|s| {
+                let existing_due = self
+                    .db
+                    .as_ref()
+                    .and_then(|db| db.get_tasks_for_list(&self.list_id).ok())
+                    .and_then(|tasks| tasks.into_iter().find(|t| t.id == task_id))
+                    .and_then(|t| t.due)
+                    .or_else(|| {
+                        row.due_str.as_deref().and_then(|s| {
                             chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
                                 .ok()
                                 .and_then(|d| d.and_hms_opt(0, 0, 0))
                                 .map(|dt| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc))
-                        });
-                    }
+                        })
+                    });
 
-                    if let Some(ref db) = self.db {
-                        let db_clone = db.clone();
-                        let updated_task = TaskLocal {
-                            id: task_id,
-                            list_id: self.list_id.clone(),
-                            title: Some(title),
-                            is_completed,
-                            notes,
-                            due: existing_due,
-                            completed: if is_completed {
-                                Some(chrono::Utc::now())
-                            } else {
-                                None
-                            },
-                            parent,
-                            updated: Some(chrono::Utc::now()),
-                            is_dirty: true,
-                            is_deleted: false,
-                        };
-                        tokio::task::spawn_blocking(move || {
-                            if let Err(err) = db_clone.save_tasks(&[updated_task]) {
-                                tracing::error!("Failed to update task completion in SQLite: {}", err);
-                            }
-                        });
-                    }
+                if let Some(ref db) = self.db {
+                    let db_clone = db.clone();
+                    let updated_task = TaskLocal {
+                        id: task_id,
+                        list_id: self.list_id.clone(),
+                        title: Some(title),
+                        is_completed,
+                        notes,
+                        due: existing_due,
+                        completed: if is_completed {
+                            Some(chrono::Utc::now())
+                        } else {
+                            None
+                        },
+                        parent,
+                        updated: Some(chrono::Utc::now()),
+                        is_dirty: true,
+                        is_deleted: false,
+                    };
+                    tokio::task::spawn_blocking(move || {
+                        if let Err(err) = db_clone.save_tasks(&[updated_task]) {
+                            tracing::error!("Failed to update task completion in SQLite: {}", err);
+                        }
+                    });
+                }
 
-                    if is_completed {
-                        let sender_input = sender.input_sender().clone();
-                        let idx_clone = index.clone();
-                        relm4::gtk::glib::timeout_add_local(
-                            std::time::Duration::from_secs(3),
-                            move || {
-                                let _ =
-                                    sender_input.send(AppInput::MoveToCompleted(idx_clone.clone()));
-                                relm4::gtk::glib::ControlFlow::Break
-                            },
-                        );
-                    }
+                if is_completed {
+                    let sender_input = sender.input_sender().clone();
+                    let idx_clone = index.clone();
+                    relm4::gtk::glib::timeout_add_local(
+                        std::time::Duration::from_secs(3),
+                        move || {
+                            let _ =
+                                sender_input.send(AppInput::MoveToCompleted(idx_clone.clone()));
+                            relm4::gtk::glib::ControlFlow::Break
+                        },
+                    );
                 }
             }
             AppInput::MoveToCompleted(index) => {
                 let idx = index.current_index();
                 let mut active_guard = self.tasks.guard();
-                if let Some(row) = active_guard.get(idx) {
-                    if row.is_completed {
-                        let task_id = row.id.clone();
-                        let title = row.title.clone();
-                        let notes = row.notes.clone();
-                        let due_str = row.due_str.clone();
-                        let parent = row.parent.clone();
-                        let is_subtask = row.is_subtask;
-                        active_guard.remove(idx);
-
-                        self.completed_tasks.guard().push_back(TaskRowInit {
-                            id: task_id,
-                            title,
-                            notes,
-                            due_str,
-                            parent,
-                            is_subtask,
-                            is_completed: true,
-                        });
-                    }
+                let Some(row) = active_guard.get(idx) else { return; };
+                if !row.is_completed {
+                    return;
                 }
+
+                let task_id = row.id.clone();
+                let title = row.title.clone();
+                let notes = row.notes.clone();
+                let due_str = row.due_str.clone();
+                let parent = row.parent.clone();
+                let is_subtask = row.is_subtask;
+                active_guard.remove(idx);
+
+                self.completed_tasks.guard().push_back(TaskRowInit {
+                    id: task_id,
+                    title,
+                    notes,
+                    due_str,
+                    parent,
+                    is_subtask,
+                    is_completed: true,
+                });
             }
             AppInput::ToggleCompletedTask(index) => {
                 let idx = index.current_index();
                 let mut completed_guard = self.completed_tasks.guard();
-                if let Some(row) = completed_guard.get(idx) {
-                    let task_id = row.id.clone();
-                    let title = row.title.clone();
-                    let notes = row.notes.clone();
-                    let due_str = row.due_str.clone();
-                    let parent = row.parent.clone();
-                    let is_subtask = row.is_subtask;
-                    completed_guard.remove(idx);
+                let Some(row) = completed_guard.get(idx) else { return; };
 
-                    let mut existing_due = None;
-                    if let Some(ref db) = self.db {
-                        if let Ok(tasks) = db.get_tasks_for_list(&self.list_id) {
-                            if let Some(t) = tasks.iter().find(|t| t.id == task_id) {
-                                existing_due = t.due;
-                            }
-                        }
-                    }
-                    if existing_due.is_none() {
-                        existing_due = due_str.as_deref().and_then(|s| {
+                let task_id = row.id.clone();
+                let title = row.title.clone();
+                let notes = row.notes.clone();
+                let due_str = row.due_str.clone();
+                let parent = row.parent.clone();
+                let is_subtask = row.is_subtask;
+                completed_guard.remove(idx);
+
+                let existing_due = self
+                    .db
+                    .as_ref()
+                    .and_then(|db| db.get_tasks_for_list(&self.list_id).ok())
+                    .and_then(|tasks| tasks.into_iter().find(|t| t.id == task_id))
+                    .and_then(|t| t.due)
+                    .or_else(|| {
+                        due_str.as_deref().and_then(|s| {
                             chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
                                 .ok()
                                 .and_then(|d| d.and_hms_opt(0, 0, 0))
                                 .map(|dt| chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(dt, chrono::Utc))
-                        });
-                    }
+                        })
+                    });
 
-                    if let Some(ref db) = self.db {
-                        let db_clone = db.clone();
-                        let updated_task = TaskLocal {
-                            id: task_id.clone(),
-                            list_id: self.list_id.clone(),
-                            title: Some(title.clone()),
-                            is_completed: false,
-                            notes: notes.clone(),
-                            due: existing_due,
-                            completed: None,
-                            parent: parent.clone(),
-                            updated: Some(chrono::Utc::now()),
-                            is_dirty: true,
-                            is_deleted: false,
-                        };
-                        tokio::task::spawn_blocking(move || {
-                            if let Err(err) = db_clone.save_tasks(&[updated_task]) {
-                                tracing::error!("Failed to update task uncompleted state in SQLite: {}", err);
-                            }
-                        });
-                    }
-
-                    self.tasks.guard().push_back(TaskRowInit {
-                        id: task_id,
-                        title,
-                        notes,
-                        due_str,
-                        parent,
-                        is_subtask,
+                if let Some(ref db) = self.db {
+                    let db_clone = db.clone();
+                    let updated_task = TaskLocal {
+                        id: task_id.clone(),
+                        list_id: self.list_id.clone(),
+                        title: Some(title.clone()),
                         is_completed: false,
+                        notes: notes.clone(),
+                        due: existing_due,
+                        completed: None,
+                        parent: parent.clone(),
+                        updated: Some(chrono::Utc::now()),
+                        is_dirty: true,
+                        is_deleted: false,
+                    };
+                    tokio::task::spawn_blocking(move || {
+                        if let Err(err) = db_clone.save_tasks(&[updated_task]) {
+                            tracing::error!("Failed to update task uncompleted state in SQLite: {}", err);
+                        }
                     });
                 }
+
+                self.tasks.guard().push_back(TaskRowInit {
+                    id: task_id,
+                    title,
+                    notes,
+                    due_str,
+                    parent,
+                    is_subtask,
+                    is_completed: false,
+                });
             }
         }
     }
