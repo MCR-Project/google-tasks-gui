@@ -3,6 +3,7 @@ name = "gtasks_gui"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+description = "Google Tasks GUI client for Linux"
 
 [dependencies]
 gtasks_core = { path = "../gtasks_core" }
