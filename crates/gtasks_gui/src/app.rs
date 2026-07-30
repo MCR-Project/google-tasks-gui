@@ -51,6 +51,15 @@ pub enum AppInput {
     SyncWithGoogle,
     SetSyncing(bool),
     Refresh,
+    TasksLoaded {
+        list_id: String,
+        tasks: Vec<TaskLocal>,
+    },
+    TaskListsAndTasksLoaded {
+        lists: Vec<TaskList>,
+        list_id: String,
+        tasks: Vec<TaskLocal>,
+    },
 }
 
 #[relm4::component(pub)]
@@ -673,42 +682,53 @@ impl SimpleComponent for AppModel {
                 self.is_syncing = false;
 
                 if let Some(ref db) = self.db {
-                    if let Ok(lists) = db.get_task_lists() {
-                        self.task_lists = lists.clone();
-                        let mut guard = self.task_list_factory.guard();
-                        guard.clear();
-                        for list in &lists {
-                            guard.push_back(TaskListRowInit {
-                                id: list.id.clone(),
-                                title: list.title.trim().to_string(),
-                            });
-                        }
+                    let db_clone = db.clone();
+                    let current_list_id = self.list_id.clone();
+                    let sender_input = sender.input_sender().clone();
 
-                        if !lists.iter().any(|l| l.id == self.list_id) {
-                            if let Some(first) = lists.first() {
-                                self.list_id = first.id.clone();
-                                self.list_title = first.title.trim().to_string();
-                            }
-                        } else if let Some(found) = lists.iter().find(|l| l.id == self.list_id) {
-                            self.list_title = found.title.trim().to_string();
-                        }
-                    }
+                    tokio::task::spawn_blocking(move || {
+                        let lists = db_clone.get_task_lists().unwrap_or_default();
+                        let target_id = if lists.iter().any(|l| l.id == current_list_id) {
+                            current_list_id
+                        } else {
+                            lists
+                                .first()
+                                .map(|l| l.id.clone())
+                                .unwrap_or_else(|| "@default".to_string())
+                        };
+                        let tasks = db_clone.get_tasks_for_list(&target_id).unwrap_or_default();
 
-                    let new_tasks = match db.get_tasks_for_list(&self.list_id) {
-                        Ok(tasks) => tasks,
-                        Err(err) => {
-                            tracing::error!(
-                                "Failed to fetch tasks on refresh for list {}: {}",
-                                self.list_id, err
-                            );
-                            Vec::new()
-                        }
-                    };
-
-                    let mut active_guard = self.tasks.guard();
-                    let mut completed_guard = self.completed_tasks.guard();
-                    populate_task_guards(new_tasks, &mut active_guard, &mut completed_guard);
+                        let _ = sender_input.send(AppInput::TaskListsAndTasksLoaded {
+                            lists,
+                            list_id: target_id,
+                            tasks,
+                        });
+                    });
                 }
+            }
+            AppInput::TaskListsAndTasksLoaded {
+                lists,
+                list_id,
+                tasks,
+            } => {
+                self.task_lists = lists.clone();
+                let mut guard = self.task_list_factory.guard();
+                guard.clear();
+                for list in &lists {
+                    guard.push_back(TaskListRowInit {
+                        id: list.id.clone(),
+                        title: list.title.trim().to_string(),
+                    });
+                }
+
+                self.list_id = list_id.clone();
+                if let Some(found) = lists.iter().find(|l| l.id == list_id) {
+                    self.list_title = found.title.trim().to_string();
+                }
+
+                let mut active_guard = self.tasks.guard();
+                let mut completed_guard = self.completed_tasks.guard();
+                populate_task_guards(tasks, &mut active_guard, &mut completed_guard);
             }
             AppInput::ToggleNewListEntry => {
                 self.show_new_list_entry = !self.show_new_list_entry;
@@ -756,27 +776,27 @@ impl SimpleComponent for AppModel {
                 self.list_id = selected_id.clone();
                 if let Some(list) = self.task_lists.iter().find(|l| l.id == selected_id) {
                     self.list_title = list.title.trim().to_string();
-                } else if let Some(ref db) = self.db {
-                    if let Ok(lists) = db.get_task_lists() {
-                        self.task_lists = lists;
-                        if let Some(list) = self.task_lists.iter().find(|l| l.id == selected_id) {
-                            self.list_title = list.title.trim().to_string();
-                        }
-                    }
                 }
 
                 if let Some(ref db) = self.db {
-                    let new_tasks = match db.get_tasks_for_list(&self.list_id) {
-                        Ok(tasks) => tasks,
-                        Err(err) => {
-                            tracing::error!("Failed to fetch tasks for list {}: {}", self.list_id, err);
-                            Vec::new()
-                        }
-                    };
+                    let db_clone = db.clone();
+                    let target_list_id = self.list_id.clone();
+                    let sender_input = sender.input_sender().clone();
 
+                    tokio::task::spawn_blocking(move || {
+                        let tasks = db_clone.get_tasks_for_list(&target_list_id).unwrap_or_default();
+                        let _ = sender_input.send(AppInput::TasksLoaded {
+                            list_id: target_list_id,
+                            tasks,
+                        });
+                    });
+                }
+            }
+            AppInput::TasksLoaded { list_id, tasks } => {
+                if self.list_id == list_id {
                     let mut active_guard = self.tasks.guard();
                     let mut completed_guard = self.completed_tasks.guard();
-                    populate_task_guards(new_tasks, &mut active_guard, &mut completed_guard);
+                    populate_task_guards(tasks, &mut active_guard, &mut completed_guard);
                 }
             }
             AppInput::AddTask => {
