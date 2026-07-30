@@ -1,0 +1,26 @@
+{
+    "app-id": "io.github.MCR_Project.google-tasks-gui",
+    "runtime": "org.gnome.Platform",
+    "runtime-version": "46",
+    "sdk": "org.gnome.Sdk",
+    "sdk-extensions": [
+        "org.freedesktop.Sdk.Extension.rust-stable"
+    ],
+    "command": "gtasks_gui",
+    "finish-args": [
+        "--share=network",
+        "--socket=fallback-x11",
+        "--socket=wayland",
+        "--device=dri"
+    ],
+    "modules": [
+        {
+            "name": "gtasks-gui",
+            "buildsystem": "simple",
+            "build-commands": [
+                "cargo --offline build --release --bin gtasks_gui",
+                "install -Dm755 target/release/gtasks_gui /app/bin/gtasks_gui"
+            ]
+        }
+    ]
+}

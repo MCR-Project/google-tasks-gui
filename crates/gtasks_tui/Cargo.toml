@@ -6,7 +6,7 @@ license = "MIT"
 description = "Google Tasks TUI client for Linux"
 
 [dependencies]
-gtasks_core = { path = "../gtasks_core" }
+gtasks_core = { version = "0.1.0", path = "../gtasks_core" }
 tokio = { version = "1.53.1", features = ["full"] }
 dotenvy = "0.15"
 ratatui = "0.30.2"
