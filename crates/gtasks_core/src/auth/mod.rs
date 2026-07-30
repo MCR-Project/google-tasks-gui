@@ -106,12 +106,12 @@ pub async fn authenticate() -> Result<TokenResponse, Box<dyn std::error::Error +
     let token_response = client
         .post("https://oauth2.googleapis.com/token")
         .form(&[
-            ("client_id", client_id),
-            ("client_secret", client_secret),
-            ("redirect_uri", redirect_uri.to_string()),
-            ("grant_type", "authorization_code".to_string()),
-            ("code", code),
-            ("code_verifier", pkce.code_verifier),
+            ("client_id", client_id.as_str()),
+            ("client_secret", client_secret.as_str()),
+            ("redirect_uri", redirect_uri.as_str()),
+            ("grant_type", "authorization_code"),
+            ("code", code.as_str()),
+            ("code_verifier", pkce.code_verifier.as_str()),
         ])
         .send()
         .await?

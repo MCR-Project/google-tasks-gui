@@ -3,6 +3,50 @@ use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, Result};
 use std::sync::{Arc, Mutex};
 
+fn row_to_task_local(row: &rusqlite::Row<'_>) -> Result<TaskLocal> {
+    let is_completed_int: i32 = row.get(3)?;
+    let due_str: Option<String> = row.get(5)?;
+    let completed_str: Option<String> = row.get(6)?;
+    let updated_str: Option<String> = row.get(8)?;
+
+    let due = due_str.as_ref().and_then(|due_str| {
+        DateTime::parse_from_rfc3339(due_str)
+            .ok()
+            .map(|dt| dt.with_timezone(&Utc))
+    });
+
+    let completed = completed_str.as_ref().and_then(|completed_str| {
+        DateTime::parse_from_rfc3339(completed_str)
+            .ok()
+            .map(|dt| dt.with_timezone(&Utc))
+    });
+
+    let updated = updated_str.as_ref().and_then(|updated_str| {
+        DateTime::parse_from_rfc3339(updated_str)
+            .ok()
+            .map(|dt| dt.with_timezone(&Utc))
+    });
+
+    let dirty_int: i32 = row.get(9)?;
+    let is_dirty: bool = dirty_int == 1;
+    let is_deleted_int: i32 = row.get(10)?;
+    let is_deleted: bool = is_deleted_int == 1;
+
+    Ok(TaskLocal {
+        id: row.get(0)?,
+        list_id: row.get(1)?,
+        title: row.get(2)?,
+        is_completed: is_completed_int != 0,
+        notes: row.get(4)?,
+        due,
+        completed,
+        parent: row.get(7)?,
+        updated,
+        is_dirty,
+        is_deleted,
+    })
+}
+
 #[derive(Clone)]
 pub struct Database {
     conn: Arc<Mutex<Connection>>,
@@ -38,10 +82,12 @@ impl Database {
             )",
             [],
         )?;
-        let _ = conn.execute(
-            "ALTER TABLE task_lists ADD COLUMN dirty INTEGER NOT NULL DEFAULT 0",
-            [],
-        );
+        if !Self::column_exists(&conn, "task_lists", "dirty")? {
+            conn.execute(
+                "ALTER TABLE task_lists ADD COLUMN dirty INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS tasks (
@@ -60,11 +106,25 @@ impl Database {
             )",
             [],
         )?;
-        let _ = conn.execute(
-            "ALTER TABLE tasks ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0",
-            [],
-        );
+        if !Self::column_exists(&conn, "tasks", "is_deleted")? {
+            conn.execute(
+                "ALTER TABLE tasks ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
         Ok(())
+    }
+
+    fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+        let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", table))?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let name: String = row.get(1)?;
+            if name == column {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     pub fn save_task_lists(&self, task_lists: &[TaskList]) -> Result<()> {
@@ -170,49 +230,7 @@ impl Database {
         let mut stmt = conn.prepare("
         SELECT id, list_id, title, is_completed, notes, due, completed, parent, updated, dirty, is_deleted FROM tasks WHERE is_deleted = 1")?;
 
-        let task_iter = stmt.query_map([], |row| {
-            let is_completed_int: i32 = row.get(3)?;
-            let due_str: Option<String> = row.get(5)?;
-            let completed_str: Option<String> = row.get(6)?;
-            let updated_str: Option<String> = row.get(8)?;
-
-            let due = due_str.as_ref().and_then(|due_str| {
-                DateTime::parse_from_rfc3339(due_str)
-                    .ok()
-                    .map(|dt| dt.with_timezone(&Utc))
-            });
-
-            let completed = completed_str.as_ref().and_then(|completed_str| {
-                DateTime::parse_from_rfc3339(completed_str)
-                    .ok()
-                    .map(|dt| dt.with_timezone(&Utc))
-            });
-
-            let updated = updated_str.as_ref().and_then(|updated_str| {
-                DateTime::parse_from_rfc3339(updated_str)
-                    .ok()
-                    .map(|dt| dt.with_timezone(&Utc))
-            });
-
-            let dirty_int: i32 = row.get(9)?;
-            let is_dirty: bool = dirty_int == 1;
-            let is_deleted_int: i32 = row.get(10)?;
-            let is_deleted: bool = is_deleted_int == 1;
-
-            Ok(TaskLocal {
-                id: row.get(0)?,
-                list_id: row.get(1)?,
-                title: row.get(2)?,
-                is_completed: is_completed_int != 0,
-                notes: row.get(4)?,
-                due,
-                completed,
-                parent: row.get(7)?,
-                updated,
-                is_dirty,
-                is_deleted,
-            })
-        })?;
+        let task_iter = stmt.query_map([], row_to_task_local)?;
 
         let mut tasks = Vec::new();
         for task in task_iter {
@@ -226,49 +244,7 @@ impl Database {
         let mut stmt = conn.prepare("
         SELECT id, list_id, title, is_completed, notes, due, completed, parent, updated, dirty, is_deleted FROM tasks WHERE list_id = ?1 AND is_deleted = 0")?;
 
-        let task_iter = stmt.query_map(params![list_id], |row| {
-            let is_completed_int: i32 = row.get(3)?;
-            let due_str: Option<String> = row.get(5)?;
-            let completed_str: Option<String> = row.get(6)?;
-            let updated_str: Option<String> = row.get(8)?;
-
-            let due = due_str.as_ref().and_then(|due_str| {
-                DateTime::parse_from_rfc3339(due_str)
-                    .ok()
-                    .map(|dt| dt.with_timezone(&Utc))
-            });
-
-            let completed = completed_str.as_ref().and_then(|completed_str| {
-                DateTime::parse_from_rfc3339(completed_str)
-                    .ok()
-                    .map(|dt| dt.with_timezone(&Utc))
-            });
-
-            let updated = updated_str.as_ref().and_then(|updated_str| {
-                DateTime::parse_from_rfc3339(updated_str)
-                    .ok()
-                    .map(|dt| dt.with_timezone(&Utc))
-            });
-
-            let dirty_int: i32 = row.get(9)?;
-            let is_dirty: bool = dirty_int == 1;
-            let is_deleted_int: i32 = row.get(10)?;
-            let is_deleted: bool = is_deleted_int == 1;
-
-            Ok(TaskLocal {
-                id: row.get(0)?,
-                list_id: row.get(1)?,
-                title: row.get(2)?,
-                is_completed: is_completed_int != 0,
-                notes: row.get(4)?,
-                due,
-                completed,
-                parent: row.get(7)?,
-                updated,
-                is_dirty,
-                is_deleted,
-            })
-        })?;
+        let task_iter = stmt.query_map(params![list_id], row_to_task_local)?;
 
         let mut tasks = Vec::new();
         for task in task_iter {
@@ -283,49 +259,7 @@ impl Database {
         let mut stmt = conn.prepare("
         SELECT id, list_id, title, is_completed, notes, due, completed, parent, updated, dirty, is_deleted FROM tasks WHERE is_deleted = 0")?;
 
-        let task_iter = stmt.query_map([], |row| {
-            let is_completed_int: i32 = row.get(3)?;
-            let due_str: Option<String> = row.get(5)?;
-            let completed_str: Option<String> = row.get(6)?;
-            let updated_str: Option<String> = row.get(8)?;
-
-            let due = due_str.as_ref().and_then(|due_str| {
-                DateTime::parse_from_rfc3339(due_str)
-                    .ok()
-                    .map(|dt| dt.with_timezone(&Utc))
-            });
-
-            let completed = completed_str.as_ref().and_then(|completed_str| {
-                DateTime::parse_from_rfc3339(completed_str)
-                    .ok()
-                    .map(|dt| dt.with_timezone(&Utc))
-            });
-
-            let updated = updated_str.as_ref().and_then(|updated_str| {
-                DateTime::parse_from_rfc3339(updated_str)
-                    .ok()
-                    .map(|dt| dt.with_timezone(&Utc))
-            });
-
-            let dirty_int: i32 = row.get(9)?;
-            let is_dirty: bool = dirty_int == 1;
-            let is_deleted_int: i32 = row.get(10)?;
-            let is_deleted: bool = is_deleted_int == 1;
-
-            Ok(TaskLocal {
-                id: row.get(0)?,
-                list_id: row.get(1)?,
-                title: row.get(2)?,
-                is_completed: is_completed_int != 0,
-                notes: row.get(4)?,
-                due,
-                completed,
-                parent: row.get(7)?,
-                updated,
-                is_dirty,
-                is_deleted,
-            })
-        })?;
+        let task_iter = stmt.query_map([], row_to_task_local)?;
 
         let mut tasks = Vec::new();
         for task in task_iter {
@@ -397,49 +331,7 @@ impl Database {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare("SELECT id, list_id, title, is_completed, notes, due, completed, parent, updated, dirty, is_deleted FROM tasks WHERE dirty = 1 AND is_deleted = 0")?;
 
-        let task_iter = stmt.query_map([], |row| {
-            let is_completed_int: i32 = row.get(3)?;
-            let due_str: Option<String> = row.get(5)?;
-            let completed_str: Option<String> = row.get(6)?;
-            let updated_str: Option<String> = row.get(8)?;
-
-            let dirty_int: i32 = row.get(9)?;
-            let is_dirty: bool = dirty_int == 1;
-            let is_deleted_int: i32 = row.get(10)?;
-            let is_deleted: bool = is_deleted_int == 1;
-
-            let due = due_str.as_ref().and_then(|due_str| {
-                DateTime::parse_from_rfc3339(due_str)
-                    .ok()
-                    .map(|dt| dt.with_timezone(&Utc))
-            });
-
-            let completed = completed_str.as_ref().and_then(|completed_str| {
-                DateTime::parse_from_rfc3339(completed_str)
-                    .ok()
-                    .map(|dt| dt.with_timezone(&Utc))
-            });
-
-            let updated = updated_str.as_ref().and_then(|updated_str| {
-                DateTime::parse_from_rfc3339(updated_str)
-                    .ok()
-                    .map(|dt| dt.with_timezone(&Utc))
-            });
-
-            Ok(TaskLocal {
-                id: row.get(0)?,
-                list_id: row.get(1)?,
-                title: row.get(2)?,
-                is_completed: is_completed_int != 0,
-                notes: row.get(4)?,
-                due,
-                completed,
-                parent: row.get(7)?,
-                updated,
-                is_dirty,
-                is_deleted,
-            })
-        })?;
+        let task_iter = stmt.query_map([], row_to_task_local)?;
 
         let mut tasks = Vec::new();
         for task in task_iter {

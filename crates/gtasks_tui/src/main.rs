@@ -8,7 +8,7 @@ use std::error::Error;
 fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     dotenvy::dotenv().ok();
 
-    println!("🚀 Starting gTasks Terminal TUI...\n");
+    tracing::info!("🚀 Starting gTasks Terminal TUI...");
 
     let rt = tokio::runtime::Runtime::new()?;
 
@@ -20,15 +20,19 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     })?;
 
     // Step 3: Synchronize remote & local data on startup
-    println!("🔄 Syncing data with Google Tasks API...");
+    tracing::info!("🔄 Syncing data with Google Tasks API...");
     rt.block_on(async {
-        let _ = sync_remote_to_db(&mut client, &mut db).await;
-        let _ = sync_local_to_db(&mut client, &mut db).await;
+        if let Err(err) = sync_remote_to_db(&mut client, &mut db).await {
+            tracing::warn!("Startup remote sync warning: {}", err);
+        }
+        if let Err(err) = sync_local_to_db(&mut client, &mut db).await {
+            tracing::warn!("Startup local sync warning: {}", err);
+        }
     });
 
     // Step 4: Run TUI Interface
     rt.block_on(async { ui::run(&mut client, &mut db).await })?;
 
-    println!("\n✨ Thank you for using gTasks!");
+    tracing::info!("✨ Thank you for using gTasks!");
     Ok(())
 }

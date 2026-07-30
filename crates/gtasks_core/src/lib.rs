@@ -1,11 +1,15 @@
 pub mod api;
 pub mod auth;
 pub mod db;
+pub mod error;
 pub mod sync;
+pub mod util;
 
 pub use api::{GoogleTasksClient, TaskList, TaskLocal};
 pub use db::Database;
+pub use error::GTasksError;
 pub use sync::{SyncCommand, SyncEvent, SyncManager};
+pub use util::{order_tasks_hierarchically, parse_nlp_task};
 use futures::future::join_all;
 use std::error::Error;
 
@@ -40,7 +44,9 @@ pub async fn sync_remote_to_db_delta(
     last_sync: Option<chrono::DateTime<chrono::Utc>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let lists = client.get_task_lists().await?;
-    db.save_task_lists(&lists)?;
+    let db_clone = db.clone();
+    let lists_clone = lists.clone();
+    tokio::task::spawn_blocking(move || db_clone.save_task_lists(&lists_clone)).await??;
 
     let fetch_futures = lists.iter().map(|list| {
         let mut client_clone = client.clone();
@@ -60,13 +66,19 @@ pub async fn sync_remote_to_db_delta(
         let mut tasks_to_save = Vec::new();
         for raw in raw_tasks {
             if raw.deleted == Some(true) {
-                let _ = db.purge_task(&raw.id);
+                let db_clone = db.clone();
+                let raw_id = raw.id.clone();
+                let target_id = raw_id.clone();
+                if let Ok(Err(err)) = tokio::task::spawn_blocking(move || db_clone.purge_task(&target_id)).await {
+                    tracing::warn!("Failed to purge deleted task {}: {}", raw_id, err);
+                }
             } else {
                 tasks_to_save.push(TaskLocal::from_task_get(raw, list_id.clone()));
             }
         }
         if !tasks_to_save.is_empty() {
-            db.save_tasks(&tasks_to_save)?;
+            let db_clone = db.clone();
+            tokio::task::spawn_blocking(move || db_clone.save_tasks(&tasks_to_save)).await??;
         }
     }
 
@@ -85,7 +97,8 @@ pub async fn sync_local_to_db(
     db: &mut Database,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     // 0. Sync pending local task lists created offline/locally
-    if let Ok(dirty_lists) = db.get_dirty_task_lists() {
+    let db_clone = db.clone();
+    if let Ok(dirty_lists) = tokio::task::spawn_blocking(move || db_clone.get_dirty_task_lists()).await? {
         for list in dirty_lists {
             match client.create_task_list(&list.title).await {
                 Ok(created_list) => {
@@ -93,7 +106,10 @@ pub async fn sync_local_to_db(
                         "📋 Created remote Google Task List '{}' with ID: {}",
                         created_list.title, created_list.id
                     );
-                    if let Err(err) = db.migrate_local_list_id(&list.id, &created_list) {
+                    let db_clone = db.clone();
+                    let list_id = list.id.clone();
+                    let cl = created_list.clone();
+                    if let Ok(Err(err)) = tokio::task::spawn_blocking(move || db_clone.migrate_local_list_id(&list_id, &cl)).await {
                         tracing::error!("Failed to migrate local list ID {}: {}", list.id, err);
                     }
                 }
@@ -105,7 +121,8 @@ pub async fn sync_local_to_db(
     }
 
     // 1. Process pending soft deletions
-    if let Ok(pending_deletions) = db.get_pending_deletions() {
+    let db_clone = db.clone();
+    if let Ok(pending_deletions) = tokio::task::spawn_blocking(move || db_clone.get_pending_deletions()).await? {
         for task in pending_deletions {
             if !task.id.is_empty()
                 && !task.id.starts_with("local_")
@@ -116,12 +133,18 @@ pub async fn sync_local_to_db(
                     continue;
                 }
             }
-            let _ = db.purge_task(&task.id);
+            let db_clone = db.clone();
+            let task_id = task.id.clone();
+            let target_id = task_id.clone();
+            if let Ok(Err(err)) = tokio::task::spawn_blocking(move || db_clone.purge_task(&target_id)).await {
+                tracing::warn!("Failed to purge deleted task {}: {}", task_id, err);
+            }
         }
     }
 
     // 2. Process dirty creations and updates
-    let dirty_tasks = db.get_dirty_task()?;
+    let db_clone = db.clone();
+    let dirty_tasks = tokio::task::spawn_blocking(move || db_clone.get_dirty_task()).await??;
 
     if dirty_tasks.is_empty() {
         return Ok(());
@@ -135,13 +158,17 @@ pub async fn sync_local_to_db(
         if task.id.is_empty() || task.id.starts_with("local_") {
             let temp_id = task.id.clone();
             let raw_task = client.create_task(&task.list_id, &task).await?;
-            // Always purge the old local/empty-ID row to prevent infinite
-            // re-creation loops. Previously, empty IDs were skipped here,
-            // leaving a permanently dirty ghost row that duplicated on every sync.
-            let _ = db.purge_task(&temp_id);
+            let db_clone = db.clone();
+            let temp_id_clone = temp_id.clone();
+            let target_id = temp_id_clone.clone();
+            if let Ok(Err(err)) = tokio::task::spawn_blocking(move || db_clone.purge_task(&target_id)).await {
+                tracing::warn!("Failed to purge temporary local task {}: {}", temp_id_clone, err);
+            }
             task = TaskLocal::from_task_get(raw_task, task.list_id.clone());
             task.is_dirty = false;
-            db.save_tasks(&[task])?;
+            let db_clone = db.clone();
+            let task_clone = task.clone();
+            tokio::task::spawn_blocking(move || db_clone.save_tasks(&[task_clone])).await??;
         } else {
             let raw_task = client
                 .update_task(
@@ -153,10 +180,17 @@ pub async fn sync_local_to_db(
                     task.due.as_ref(),
                 )
                 .await?;
-            let _ = db.mark_task_clean(&task.id);
+            let db_clone = db.clone();
+            let task_id = task.id.clone();
+            let target_id = task_id.clone();
+            if let Ok(Err(err)) = tokio::task::spawn_blocking(move || db_clone.mark_task_clean(&target_id)).await {
+                tracing::warn!("Failed to mark task clean {}: {}", task_id, err);
+            }
             task = TaskLocal::from_task_get(raw_task, task.list_id.clone());
             task.is_dirty = false;
-            db.save_tasks(&[task])?;
+            let db_clone = db.clone();
+            let task_clone = task.clone();
+            tokio::task::spawn_blocking(move || db_clone.save_tasks(&[task_clone])).await??;
         }
     }
     Ok(())

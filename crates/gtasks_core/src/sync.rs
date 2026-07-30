@@ -98,7 +98,10 @@ async fn perform_single_sync(
     let mut client = obtain_authenticated_client()
         .await
         .map_err(|e| e.to_string())?;
-    let mut db = Database::new("task_lists.db").map_err(|e| e.to_string())?;
+    let mut db = tokio::task::spawn_blocking(|| Database::new("task_lists.db"))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
 
     sync_local_to_db(&mut client, &mut db)
         .await

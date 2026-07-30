@@ -1,9 +1,9 @@
-use chrono::Datelike;
 use gtasks_core::{TaskList, TaskLocal};
 
 pub mod draw;
 pub mod run;
 pub use run::run;
+pub use gtasks_core::{order_tasks_hierarchically, parse_nlp_task};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ActivePane {
@@ -48,101 +48,14 @@ pub struct App {
     pub due_buffer: String,
 }
 
-pub fn parse_nlp_task(input: &str) -> (String, Option<chrono::DateTime<chrono::Utc>>) {
-    let lower = input.to_lowercase();
-    let today = chrono::Local::now().date_naive();
-    let mut due_date: Option<chrono::NaiveDate> = None;
-    let mut matched_phrase: Option<&str> = None;
 
-    if lower.contains("next week") {
-        due_date = Some(today + chrono::Duration::days(7));
-        matched_phrase = Some("next week");
-    } else if lower.contains("tomorrow") {
-        due_date = Some(today + chrono::Duration::days(1));
-        matched_phrase = Some("tomorrow");
-    } else if lower.contains("today") {
-        due_date = Some(today);
-        matched_phrase = Some("today");
-    } else {
-        let patterns = [
-            ("next monday", chrono::Weekday::Mon),
-            ("next tuesday", chrono::Weekday::Tue),
-            ("next wednesday", chrono::Weekday::Wed),
-            ("next thursday", chrono::Weekday::Thu),
-            ("next friday", chrono::Weekday::Fri),
-            ("next saturday", chrono::Weekday::Sat),
-            ("next sunday", chrono::Weekday::Sun),
-        ];
-        for (phrase, weekday) in patterns {
-            if lower.contains(phrase) {
-                let mut d = today + chrono::Duration::days(1);
-                while d.weekday() != weekday {
-                    d += chrono::Duration::days(1);
-                }
-                due_date = Some(d);
-                matched_phrase = Some(phrase);
-                break;
-            }
-        }
-
-        if due_date.is_none() {
-            let single_weekdays = [
-                ("monday", chrono::Weekday::Mon),
-                ("tuesday", chrono::Weekday::Tue),
-                ("wednesday", chrono::Weekday::Wed),
-                ("thursday", chrono::Weekday::Thu),
-                ("friday", chrono::Weekday::Fri),
-                ("saturday", chrono::Weekday::Sat),
-                ("sunday", chrono::Weekday::Sun),
-            ];
-            for (name, weekday) in single_weekdays {
-                let words: Vec<&str> = lower.split_whitespace().collect();
-                if words.contains(&name) {
-                    let mut d = today + chrono::Duration::days(1);
-                    while d.weekday() != weekday {
-                        d += chrono::Duration::days(1);
-                    }
-                    due_date = Some(d);
-                    matched_phrase = Some(name);
-                    break;
-                }
-            }
-        }
-    }
-
-    let clean_title = if let Some(phrase) = matched_phrase {
-        let mut result = String::new();
-        let mut remaining = input;
-        while let Some(pos) = remaining.to_lowercase().find(phrase) {
-            result.push_str(&remaining[..pos]);
-            remaining = &remaining[pos + phrase.len()..];
-        }
-        result.push_str(remaining);
-        result
-    } else {
-        input.to_string()
-    };
-
-    let clean_trimmed = clean_title.trim().to_string();
-    let final_title = if clean_trimmed.is_empty() {
-        input.trim().to_string()
-    } else {
-        clean_trimmed
-    };
-
-    let due_dt = due_date.map(|d| {
-        let naive_dt = d.and_hms_opt(0, 0, 0).unwrap();
-        chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(naive_dt, chrono::Utc)
-    });
-
-    (final_title, due_dt)
-}
 
 impl App {
     pub fn new(task_lists: Vec<TaskList>, tasks: Vec<TaskLocal>) -> Self {
+        let ordered_tasks = order_tasks_hierarchically(tasks);
         Self {
             task_lists,
-            tasks,
+            tasks: ordered_tasks,
             selected_list_idx: 0,
             selected_task_idx: 0,
             active_pane: ActivePane::TaskLists,
@@ -388,7 +301,7 @@ impl App {
                 } else {
                     chrono::NaiveDate::parse_from_str(self.due_buffer.trim(), "%Y-%m-%d")
                         .ok()
-                        .map(|nd| nd.and_hms_opt(0, 0, 0).unwrap())
+                        .map(|nd| nd.and_hms_opt(0, 0, 0).expect("Midnight is always valid"))
                         .map(|dt| {
                             chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
                                 dt,

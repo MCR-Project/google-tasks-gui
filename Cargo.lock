@@ -1330,10 +1330,10 @@ dependencies = [
  "chrono",
  "crossterm",
  "dotenvy",
- "futures",
  "gtasks_core",
  "ratatui",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
