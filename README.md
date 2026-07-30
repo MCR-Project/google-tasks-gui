@@ -1,196 +1,191 @@
-# 🚀 gTasks (`gtasks-ru`)
+# 🚀 gTasks (`gtasks-tui`)
 
-> A modern, fast, offline-first Google Tasks desktop client for Linux built with **Rust**.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Language: Rust](https://img.shields.io/badge/Language-Rust-orange.svg)](https://www.rust-lang.org/)
+[![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen.svg)](https://github.com/MCR-Project/google-tasks-gui)
+[![Platform: Linux](https://img.shields.io/badge/Platform-Linux-blue.svg)](https://www.kernel.org/)
 
----
-
-## 📌 Overview & Vision
-
-While Google Tasks is widely used across mobile and web, Linux lacks a modern, high-performance native desktop client. **gTasks** bridges this gap by providing a native Linux desktop app build on rust, works completely offline, and syncs seamlessly with Google's servers in the background.
-
-### Key Goals
-
-* ⚡ **Instant Startup & Low Footprint:** Native performance with minimal RAM usage.
-* 📴 **Offline-First:** Local SQLite cache so you can view, create, and complete tasks without an active internet connection.
-* 🔐 **Secure Auth:** Local loopback OAuth 2.0 PKCE authentication storing credentials in the Linux system keyring (`Secret Service` API / KWallet).
-* 🐧 **Native Desktop Integration:** Global system tray support, dark mode sync, and native Linux desktop notifications.
+> A modern, fast, offline-first **Google Tasks** desktop client & terminal dashboard for Linux built with **Rust**.
 
 ---
 
-## 🏗️ Architecture & Data Flow
+## 📌 Overview & Highlights
+
+**gTasks** is a high-performance native desktop client for Google Tasks on Linux. It bridges the gap between terminal productivity and desktop UI by providing a fast, offline-first experience with seamless background synchronization.
+
+Whether you prefer a keyboard-driven Terminal User Interface (TUI) or a sleek GTK4 desktop app, **gTasks** keeps your task lists in sync while storing your credentials safely in your OS keyring.
+
+### ✨ Key Features
+
+- ⚡ **Instant Startup & Minimal Footprint:** Written in native Rust with low memory overhead.
+- 📴 **Offline-First Storage:** Integrated local SQLite cache so you can read, create, edit, and complete tasks without an active internet connection.
+- 🔐 **Secure Keyring Authentication:** Local loopback OAuth 2.0 PKCE flow that stores tokens safely in the Linux System Keyring (`Secret Service` API / KWallet).
+- 🖥️ **Dual Interface:**
+  - **TUI:** Terminal User Interface built with [Ratatui](https://github.com/ratatui/ratatui) & [Crossterm](https://github.com/crossterm-rs/crossterm).
+  - **GUI:** Desktop interface built with GTK4 / Libadwaita via [Relm4](https://relm4.org/).
+- 🗓️ **Natural Language Date Parsing:** Smart date recognition (e.g. `"Buy milk today"`, `"Submit report tomorrow"`, `"Team sync next monday"`).
+- 🌲 **Hierarchical Subtask Ordering:** Supports nested tasks and subtask parent-child relationships.
+- 🔄 **Bidirectional Background Sync:** Automatic delta syncing, conflict resolution, offline change queuing, and silent OAuth token refreshes.
+
+---
+
+## 🏗️ Workspace Architecture
 
 ```text
-               ┌─────────────────────────────────────────────────┐
-               │         Terminal User Interface (TUI)           │
-               │             (Ratatui / Crossterm)               │
-               └────────────────────────┬────────────────────────┘
-                                        │
-                                        ▼
-               ┌─────────────────────────────────────────────────┐
-               │              Rust Engine Core                   │
-               │  • Tokio Async Runtime   • OAuth PKCE Handler   │
-               │  • Background Sync Loop  • Local Keyring Vault  │
-               └──────────────┬──────────────────┬───────────────┘
-                              │                  │
-               ┌──────────────▼──────┐    ┌──────▼────────────────┐
-               │ Local SQLite Cache  │    │ Google Tasks REST API │
-               │  (Fast offline read)│    │ (Background sync HTTP)│
-               └─────────────────────┘    └───────────────────────┘
-
+               ┌────────────────────────────────────────────────────────┐
+               │          Terminal UI           │      Desktop GUI      │
+               │      (Ratatui / Crossterm)     │   (Relm4 / GTK4)      │
+               └───────────────────┬───────────────────┬────────────────┘
+                                   │                   │
+                                   ▼                   ▼
+               ┌────────────────────────────────────────────────────────┐
+               │                   gtasks_core Engine                   │
+               │  • Tokio Async Runtime      • OAuth 2.0 PKCE Handler   │
+               │  • Background Sync Engine   • OS Keyring Credentials   │
+               │  • NLP Date Parsing         • Task Hierarchy Processor │
+               └──────────────┬────────────────────────┬────────────────┘
+                              │                        │
+               ┌──────────────▼──────┐          ┌──────▼────────────────┐
+               │ Local SQLite Cache  │          │ Google Tasks REST API │
+               │  (Fast offline read)│          │ (Background HTTP Sync)│
+               └─────────────────────┘          └───────────────────────┘
 ```
 
----
-
-## 🗺️ Project Roadmap & Status
-
-### Phase 0: Architecture & Tooling
-
-* [x] **Tech Stack Selection:** Rust + Tokio + Reqwest backend.
-* [x] **Local Storage Design:** SQLite via `sqlx` / `rusqlite` for offline-first data persistence.
-* [x] **Authentication Flow:** OAuth 2.0 Authorization Code Flow with PKCE.
-* [x] **UI Framework Target:** Ratatui + Crossterm (TUI).
+The repository is structured as a Rust Cargo Workspace:
+- [`crates/gtasks_core`](file:///home/alex_insc/project/gtasks-tui/crates/gtasks_core) - Core business logic, OAuth 2.0 PKCE flow, SQLite database persistence, background sync worker, and natural language date parser.
+- [`crates/gtasks_tui`](file:///home/alex_insc/project/gtasks-tui/crates/gtasks_tui) - Terminal dashboard application powered by Ratatui & Crossterm.
+- [`crates/gtasks_gui`](file:///home/alex_insc/project/gtasks-tui/crates/gtasks_gui) - Native Linux desktop GUI built with Relm4 (GTK4 / Libadwaita).
 
 ---
 
-### Phase 1: Headless Core & CLI Proof of Concept *(Current Focus)*
+## 🛠️ Prerequisites & System Requirements
 
-> **Goal:** Complete a working terminal/CLI tool in Rust before touching any GUI code.
+To build **gTasks** on Linux, ensure you have the Rust toolchain installed alongside native development headers:
 
-* [x] **Local Keyring Setup:** Integrate `keyring` crate to read/write tokens safely to Linux Secret Service.
-* [x] **OAuth 2.0 PKCE Loopback:**
-* [x] Spin up local TCP listener on `127.0.0.1:8080`.
-* [x] Launch system browser (`open` crate) to Google Login page.
-* [x] Receive redirect authorization code and exchange for `access_token` & `refresh_token`.
-
-* [x] **Google API Client:**
-* [x] Fetch user task lists (`GET /tasks/v1/users/@me/lists`).
-* [x] Save user task lists in a sqlite database
-* [x] Fetch tasks within a list (`GET /tasks/v1/lists/{list_id}/tasks`).
-* [x] Save users tasks within a list in the sqlite database
-* [x] Create a new task (`POST /tasks/v1/lists/{list_id}/tasks`).
-* [x] Toggle task completion (`PATCH /tasks/v1/lists/{list_id}/tasks/{task_id}`).
-* [x] Delete a task (`DELETE /tasks/v1/lists/{list_id}/tasks/{task_id}`).
-* [x] Update tasks
-
-* [x] **Local SQLite Schema:**
-* [x] Create `task_lists` table (`id`, `title`, `updated_at`, `synced`).
-* [x] Create `tasks` table (`id`, `list_id`, `title`, `notes`, `due_date`, `status`, `dirty_bit`).
-
----
-
-### Phase 2A: Terminal User Interface (TUI) *(Next Milestone)*
-
-> **Goal:** Build a fast, keyboard-driven terminal dashboard using `ratatui` + `crossterm`.
-
-* [ ] **TUI Application Loop:** Set up `crossterm` raw mode, terminal event loop, and state management.
-* [ ] **Sidebar Navigation:** Render Google Task Lists in a navigable sidebar widget.
-* [ ] **Task View Grid:** Display tasks, due dates, and completion status checkboxes (`[ ]` / `[x]`).
-* [ ] **Interactive Actions:** Keybindings for `Space` (Toggle Task), `n` (New Task), `d` (Delete Task), `r` (Manual Sync).
-* [ ] **Status Bar:** Real-time sync status and helper keybindings footer.
-
----
-
-### Phase 2B: Desktop GUI Application
-
-> **Goal:** Connect the Rust backend engine to a native desktop window (GTK4 / Tauri 2.0).
-
-* [ ] **Window Shell Setup:** Initialize application layout with GTK4 / Libadwaita styling.
-* [ ] **Task List Sidebar:** Render task lists dynamically from the local SQLite cache.
-* [ ] **Task View Grid:** Display tasks, subtasks, due dates, and completion checkboxes.
-* [ ] **Keyboard Shortcuts:** Add `Ctrl+N` (New Task), `Ctrl+R` (Sync), and `Escape` (Close/Minimize).
-* [ ] **Dark / Light Theme Auto-Detection:** Match system desktop theme automatically.
-
----
-
-### Phase 3: Background Sync Engine
-
-> **Goal:** Handle network interruptions and background bidirection sync safely.
-
-* [x] **Offline Queueing:** Mark tasks modified offline with a `dirty` flag in SQLite.
-* [x] **Background Sync Worker:** Tokio task running every 5 minutes (or on manual trigger) to push `dirty` tasks and fetch server updates.
-* [x] **Conflict Resolution:** Simple "Last Write Wins" timestamp comparison strategy.
-* [x] **Auto-Refresh Tokens:** Silent token refresh using saved `refresh_token` when HTTP 401 occurs.
-
----
-
-### Phase 4: Linux Desktop Polish
-
-> **Goal:** Make the app feel like a built-in OS utility.
-
-* [ ] **System Tray Integration:** Minimize to tray icon with a quick "Add Task" popup option.
-* [ ] **Desktop Notifications:** Send native Linux desktop notifications when a task due date arrives using `notify-rust`.
-* [ ] **Global Hotkey:** Configurable shortcut (e.g., `Super+Shift+T`) to launch or focus the window.
-
----
-
-### Phase 5: Packaging & Distribution
-
-> **Goal:** Publish to package managers worldwide.
-
-* [ ] **Flatpak Build:** Package for Flathub deployment.
-* [ ] **Arch Linux AUR:** Create `PKGBUILD` script for Arch / Manjaro users.
-* [ ] **Debian / Ubuntu Package:** Build `.deb` binary package using `cargo-deb`.
-* [ ] **Internationalization (i18n):** Extract all UI strings into gettext / fluent files for global translations.
-
----
-
-## 🛠️ Required Dependencies (`Cargo.toml`)
-
-```toml
-[dependencies]
-# Async Engine & HTTP
-tokio = { version = "1.38", features = ["full"] }
-reqwest = { version = "0.12", features = ["json"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-
-# Local Storage & System Auth
-sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio-native-tls"] }
-keyring = "2.1"
-open = "5.1"
-url = "2.5"
-
-# Linux Desktop Integration
-notify-rust = "4.10"
-
-```
-
----
-
-## 💻 Developer Setup
-
-### Prerequisites
-
-Make sure you have basic C build tools and Linux header libraries installed:
+### 1. Install System Dependencies
 
 ```bash
 # Ubuntu / Debian
-sudo apt install build-essential pkg-config libssl-dev libsecret-1-dev
+sudo apt update
+sudo apt install build-essential pkg-config libssl-dev libsecret-1-dev libgtk-4-dev libadwaita-1-dev
 
 # Fedora
-sudo dnf install @development-tools openssl-devel libsecret-devel
+sudo dnf install @development-tools openssl-devel libsecret-devel gtk4-devel libadwaita-devel
 
-# Arch Linux
-sudo pacman -S base-devel openssl libsecret
-
+# Arch Linux / Manjaro
+sudo pacman -S base-devel openssl libsecret gtk4 libadwaita
 ```
 
-### Running Local Builds
+### 2. Configure Google API OAuth Credentials
+
+Create a `.env` file in the root directory (or copy from template) containing your Google Cloud OAuth Client ID and Secret:
+
+```env
+GOOGLE_CLIENT_ID=your_client_id_here
+GOOGLE_CLIENT_SECRET=your_client_secret_here
+```
+
+---
+
+## 🚀 Quick Start
+
+### Building & Running
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/taska.git
-cd taska
+git clone https://github.com/MCR-Project/google-tasks-gui.git
+cd google-tasks-gui
 
-# Run CLI proof-of-concept
-cargo run --bin taska-cli
+# Run the Terminal User Interface (TUI)
+cargo run -p gtasks_tui
 
+# Run the Desktop GUI (GTK4 / Relm4)
+cargo run -p gtasks_gui
 ```
+
+### Running Tests
+
+```bash
+cargo test
+```
+
+---
+
+## ⌨️ TUI Keybindings
+
+When running `gtasks_tui`, use the following keyboard controls:
+
+| Key | Action |
+| --- | --- |
+| `Tab` | Switch focus between Task Lists sidebar and Tasks view |
+| `j` / `Down` | Move selection down |
+| `k` / `Up` | Move selection up |
+| `g` | Jump to top of list |
+| `G` | Jump to bottom of list |
+| `Space` | Toggle task completion status (`[ ]` / `[x]`) |
+| `c` | Create new task in active list |
+| `L` | Create new task list (when focused on Task Lists pane) |
+| `e` | Edit selected task details (Title, Notes, Due Date) |
+| `d` / `Delete` | Delete selected task |
+| `r` | Trigger manual sync with Google Tasks API |
+| `q` | Quit application |
+
+---
+
+## 🧠 Natural Language Task Entry
+
+When creating or editing tasks, natural language expressions in task titles are automatically parsed into structured due dates:
+
+| Input Text | Resulting Task Title | Extracted Due Date |
+| --- | --- | --- |
+| `Buy groceries today` | `Buy groceries` | Today |
+| `Finish quarterly report tomorrow` | `Finish quarterly report` | Tomorrow |
+| `Sync with team next monday` | `Sync with team` | Next Monday |
+
+---
+
+## 🗺️ Roadmap & Project Status
+
+- [x] **Phase 0: Workspace Architecture**
+  - Modular Cargo workspace (`gtasks_core`, `gtasks_tui`, `gtasks_gui`).
+- [x] **Phase 1: Secure Core & Engine**
+  - OAuth 2.0 PKCE authentication flow with local loopback listener.
+  - Linux System Keyring integration (`Secret Service` / KWallet).
+  - SQLite local database cache (`task_lists.db`).
+  - Google Tasks REST API client integration.
+  - Natural Language Date Parsing (NLP).
+- [x] **Phase 2: User Interfaces**
+  - Interactive Terminal User Interface (`gtasks_tui`).
+  - Native Linux GTK4 Desktop GUI (`gtasks_gui`).
+- [x] **Phase 3: Sync & Offline Resilience**
+  - Offline edit queuing with `dirty_bit` flag tracking.
+  - Background delta sync engine.
+  - Soft-deletion queue & sync.
+- [ ] **Phase 4: Packaging & Distribution**
+  - Flatpak & AUR packaging.
+  - Desktop entry & icon integration.
+
+---
+
+## 🤝 Contributing
+
+Contributions are very welcome! If you find a bug or have a feature suggestion, please feel free to open an issue or submit a pull request.
+
+1. Fork the Repository
+2. Create your Feature Branch (`git checkout -b feature/amazing-feature`)
+3. Commit your Changes (`git commit -m 'Add some amazing-feature'`)
+4. Verify tests pass (`cargo test`)
+5. Push to the Branch (`git push origin feature/amazing-feature`)
+6. Open a Pull Request
+
+---
+
+## 🔒 Privacy Policy
+
+gTasks is a local-first application and prioritizes your data privacy. Google Tasks data and OAuth tokens are strictly stored locally on your device or in your OS Keyring and are never transmitted to any third-party servers. For details, see the complete [Privacy Policy](file:///home/alex_insc/project/gtasks-tui/PRIVACY_POLICY.md).
 
 ---
 
 ## 📄 License
 
-Distributed under the **MIT License**. See `LICENSE` for more information.
-
----
+This project is licensed under the **MIT License** - see the [LICENSE](file:///home/alex_insc/project/gtasks-tui/LICENSE) file for details.
