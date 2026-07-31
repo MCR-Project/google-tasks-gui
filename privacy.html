@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Privacy Policy - gtasks-gui</title>
+    <title>Privacy Policy - gtasks-tui</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -126,19 +126,19 @@
 
     <header>
         <div class="nav-container">
-            <a href="index.html" class="logo">← Back to gtasks-gui Home</a>
+            <a href="index.html" class="logo">← Back to gtasks-tui Home</a>
         </div>
     </header>
 
     <main class="container">
-        <h1>Privacy Policy for gtasks-gui</h1>
+        <h1>Privacy Policy for gtasks-tui</h1>
         <p class="subtitle">Last Updated: July 31, 2026</p>
 
-        <p>This Privacy Policy applies to the <strong>gtasks-gui</strong> application, developed and maintained by <strong>MCR-Project</strong> ("we", "us", or "our"). This document outlines how <strong>gtasks-gui</strong> accesses, uses, stores, and protects your information when you use our application.</p>
+        <p>This Privacy Policy applies to the <strong>gtasks-tui</strong> application, developed and maintained by <strong>MCR-Project</strong> ("we", "us", or "our"). This document outlines how <strong>gtasks-tui</strong> accesses, uses, stores, and protects your information when you use our application.</p>
 
         <h2>1. Information We Access & Collect</h2>
-        <p><strong>gtasks-gui</strong> is a <strong>local-first desktop and terminal application</strong> designed to manage your Google Tasks. To provide its core features, <strong>gtasks-gui</strong> requests access to your Google Account data via the official Google Tasks REST API (<code>https://www.googleapis.com/auth/tasks</code>).</p>
-        <p>Specifically, <strong>gtasks-gui</strong> accesses:</p>
+        <p><strong>gtasks-tui</strong> is a <strong>local-first desktop and terminal application</strong> designed to manage your Google Tasks. To provide its core features, <strong>gtasks-tui</strong> requests access to your Google Account data via the official Google Tasks REST API (<code>https://www.googleapis.com/auth/tasks</code>).</p>
+        <p>Specifically, <strong>gtasks-tui</strong> accesses:</p>
         <ul>
             <li><strong>Google Tasks Data:</strong> Task list titles, task titles, task descriptions/notes, completion statuses, due dates, subtask hierarchies, and modification timestamps.</li>
             <li><strong>OAuth Authentication Tokens:</strong> Access and refresh tokens issued by Google to authenticate your session.</li>
@@ -146,7 +146,7 @@
         <p>We <strong>do not</strong> collect or access your name, email address, password, contacts, Google Drive files, or any other personal information associated with your Google Account.</p>
 
         <h2>2. How We Use Your Data</h2>
-        <p>All data accessed through the Google Tasks API is used <strong>strictly to provide and improve user-facing features within the application</strong>. Specifically, <strong>gtasks-gui</strong> uses your data to:</p>
+        <p>All data accessed through the Google Tasks API is used <strong>strictly to provide and improve user-facing features within the application</strong>. Specifically, <strong>gtasks-tui</strong> uses your data to:</p>
         <ul>
             <li>Display your task lists and tasks in the desktop (GTK4/Libadwaita) and terminal (Ratatui) interfaces.</li>
             <li>Create, edit, complete, reorder, or delete tasks on your behalf based on your direct in-app actions.</li>
@@ -157,38 +157,38 @@
         <ul>
             <li><strong>No Selling:</strong> We do not sell, rent, or trade your Google user data to any third party under any circumstances.</li>
             <li><strong>No Advertising:</strong> Your data is never used for advertising, marketing, or behavioral tracking purposes.</li>
-            <li><strong>No AI/ML Training:</strong> Google Workspace user data accessed by <strong>gtasks-gui</strong> is <strong>never</strong> used to develop, improve, or train generalized or non-personalized Artificial Intelligence (AI) or Machine Learning (ML) models.</li>
-            <li><strong>No Server Transfers:</strong> <strong>gtasks-gui</strong> does not transmit your tasks or authentication tokens to any external server managed by MCR-Project or any third party. All communication occurs directly between your local device and Google's official endpoints (<code>googleapis.com</code>).</li>
+            <li><strong>No AI/ML Training:</strong> Google Workspace user data accessed by <strong>gtasks-tui</strong> is <strong>never</strong> used to develop, improve, or train generalized or non-personalized Artificial Intelligence (AI) or Machine Learning (ML) models.</li>
+            <li><strong>No Server Transfers:</strong> <strong>gtasks-tui</strong> does not transmit your tasks or authentication tokens to any external server managed by MCR-Project or any third party. All communication occurs directly between your local device and Google's official endpoints (<code>googleapis.com</code>).</li>
         </ul>
 
         <h2>3. Data Storage & Security</h2>
-        <p><strong>gtasks-gui</strong> prioritizes data minimization and local security:</p>
+        <p><strong>gtasks-tui</strong> prioritizes data minimization and local security:</p>
         <ul>
             <li><strong>Local Database Storage:</strong> Your task lists and tasks are cached locally on your device in a SQLite database (<code>task_lists.db</code>) to enable fast offline access.</li>
             <li><strong>OAuth Token Security:</strong> OAuth 2.0 access and refresh tokens are encrypted and stored using your operating system’s secure credential storage system (e.g., Linux Secret Service / KWallet via <code>keyring</code>).</li>
-            <li><strong>Transport Security:</strong> All communication between <strong>gtasks-gui</strong> and Google API servers is strictly encrypted in transit using standard HTTPS/TLS protocols.</li>
+            <li><strong>Transport Security:</strong> All communication between <strong>gtasks-tui</strong> and Google API servers is strictly encrypted in transit using standard HTTPS/TLS protocols.</li>
         </ul>
 
         <h2>4. How to Manage or Delete Your Data</h2>
-        <p>Because <strong>gtasks-gui</strong> operates locally on your computer, you have total control over your data:</p>
+        <p>Because <strong>gtasks-tui</strong> operates locally on your computer, you have total control over your data:</p>
         <ul>
             <li><strong>Delete Local Data:</strong> You can remove all locally stored task caches and databases at any time by deleting the application's local database file.</li>
-            <li><strong>Remove Account Access:</strong> You can revoke <strong>gtasks-gui</strong>'s access to your Google Account at any time by visiting your <a href="https://myaccount.google.com/permissions" target="_blank">Google Account Permissions Page</a> and selecting <strong>Remove Access</strong> for <strong>gtasks-gui</strong>.</li>
-            <li><strong>Delete Tasks:</strong> Deleting a task or task list within the <strong>gtasks-gui</strong> interface will permanently issue a deletion command to your Google Tasks account.</li>
+            <li><strong>Remove Account Access:</strong> You can revoke <strong>gtasks-tui</strong>'s access to your Google Account at any time by visiting your <a href="https://myaccount.google.com/permissions" target="_blank">Google Account Permissions Page</a> and selecting <strong>Remove Access</strong> for <strong>gtasks-tui</strong>.</li>
+            <li><strong>Delete Tasks:</strong> Deleting a task or task list within the <strong>gtasks-tui</strong> interface will permanently issue a deletion command to your Google Tasks account.</li>
         </ul>
 
         <h2>5. Third-Party Services</h2>
-        <p><strong>gtasks-gui</strong> interacts directly with <strong>Google LLC</strong> services. Your use of <strong>gtasks-gui</strong> is subject to Google's own policies regarding task data:</p>
+        <p><strong>gtasks-tui</strong> interacts directly with <strong>Google LLC</strong> services. Your use of <strong>gtasks-tui</strong> is subject to Google's own policies regarding task data:</p>
         <ul>
             <li><a href="https://policies.google.com/privacy" target="_blank">Google Privacy Policy</a></li>
             <li><a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank">Google API Services User Data Policy</a></li>
         </ul>
 
         <h2>6. Open Source & Transparency</h2>
-        <p><strong>gtasks-gui</strong> is open-source software distributed under the MIT License. You can review the complete source code to verify our data security practices at our official repository: <a href="https://github.com/MCR-Project/google-tasks-gui" target="_blank">https://github.com/MCR-Project/google-tasks-gui</a></p>
+        <p><strong>gtasks-tui</strong> is open-source software distributed under the MIT License. You can review the complete source code to verify our data security practices at our official repository: <a href="https://github.com/MCR-Project/google-tasks-gui" target="_blank">https://github.com/MCR-Project/google-tasks-gui</a></p>
 
         <h2>7. Contact Us</h2>
-        <p>If you have any questions or concerns regarding this Privacy Policy or <strong>gtasks-gui</strong>'s data handling practices, please open an issue on our GitHub repository or contact us:</p>
+        <p>If you have any questions or concerns regarding this Privacy Policy or <strong>gtasks-tui</strong>'s data handling practices, please open an issue on our GitHub repository or contact us:</p>
         <ul>
             <li><strong>Developer / Organization:</strong> MCR-Project</li>
             <li><strong>GitHub Repository:</strong> <a href="https://github.com/MCR-Project/google-tasks-gui" target="_blank">https://github.com/MCR-Project/google-tasks-gui</a></li>
@@ -197,7 +197,7 @@
     </main>
 
     <footer>
-        <p>© 2026 MCR-Project. gtasks-gui Privacy Policy.</p>
+        <p>© 2026 MCR-Project. gtasks-tui Privacy Policy.</p>
     </footer>
 
 </body>

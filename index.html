@@ -4,12 +4,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description"
-        content="gtasks-gui is an open-source, local-first Linux desktop and terminal application for managing Google Tasks.">
+    <meta name="description" content="gtasks-tui is an open-source, local-first Linux desktop and terminal application for managing Google Tasks.">
     <!-- Google Search Console Verification Meta Tag -->
     <meta name="google-site-verification" content="KkNpuG4OYEEbzml3D_DdZd-YeQHyQpvNFWGa_4XOaXA" />
 
-    <title>gtasks-gui - Native Google Tasks Application</title>
+    <title>gtasks-tui - Native Google Tasks Application</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -111,7 +110,7 @@
         }
 
         h1 {
-            font-size: 3rem;
+            font-size: 3.5rem;
             font-weight: 800;
             letter-spacing: -0.025em;
             margin-bottom: 1rem;
@@ -280,7 +279,7 @@
 
     <header>
         <div class="nav-container">
-            <a href="#" class="logo">gtasks-gui</a>
+            <a href="#" class="logo">gtasks-tui</a>
             <ul class="nav-links">
                 <li><a href="#purpose">App Purpose</a></li>
                 <li><a href="#api-usage">Google API Usage</a></li>
@@ -295,9 +294,8 @@
 
         <section class="hero">
             <span class="badge">Open Source • Linux Desktop & TUI</span>
-            <h1>gtasks-gui</h1>
-            <p>A fast, local-first native desktop client for Google Tasks on Linux built with GTK4, Libadwaita, and
-                Rust.</p>
+            <h1>gtasks-tui</h1>
+            <p>A fast, local-first native application for Google Tasks on Linux built with GTK4, Libadwaita, and Rust.</p>
 
             <div class="btn-group">
                 <a href="https://github.com/MCR-Project/google-tasks-gui" class="btn btn-primary">View on GitHub</a>
@@ -309,18 +307,13 @@
         <section id="purpose" class="section">
             <h2>Application Purpose</h2>
             <p>
-                <strong>gtasks-gui</strong> is an open-source task management desktop application developed for Linux
-                systems.
-                The primary purpose of <strong>gtasks-gui</strong> is to empower users to seamlessly view, organize,
-                edit, and synchronize
-                their daily to-do lists and Google Tasks natively from their desktop without relying on web browsers or
-                heavy Electron apps.
+                <strong>gtasks-tui</strong> is an open-source task management application developed for Linux systems.
+                The primary purpose of <strong>gtasks-tui</strong> is to empower users to seamlessly view, organize, edit, and synchronize
+                their daily to-do lists and Google Tasks natively from their desktop without relying on web browsers or heavy Electron apps.
             </p>
             <p>
-                With <strong>gtasks-gui</strong>, users can manage personal and work task lists with zero network
-                latency using an offline-first
-                SQLite cache that automatically syncs bidirectional changes whenever an internet connection is
-                available.
+                With <strong>gtasks-tui</strong>, users can manage personal and work task lists with zero network latency using an offline-first
+                SQLite cache that automatically syncs bidirectional changes whenever an internet connection is available.
             </p>
         </section>
 
@@ -328,36 +321,25 @@
         <section id="api-usage" class="section">
             <h2>Google Tasks API Integration & Scope Usage</h2>
             <p>
-                To provide native synchronization with your Google Account, <strong>gtasks-gui</strong> integrates with
-                the official
+                To provide native synchronization with your Google Account, <strong>gtasks-tui</strong> integrates with the official 
                 Google Tasks REST API.
             </p>
 
             <div class="scope-box">
                 <p><strong>Requested OAuth 2.0 Scope:</strong> <code>https://www.googleapis.com/auth/tasks</code></p>
                 <p style="margin-top: 0.5rem; margin-bottom: 0;">
-                    <strong>Why Access is Required:</strong> This permission is required to fetch user task lists,
-                    retrieve task items, create new tasks,
-                    update task details (title, notes, due dates, completion status), and delete completed or discarded
-                    tasks upon user request.
+                    <strong>Why Access is Required:</strong> This permission is required to fetch user task lists, retrieve task items, create new tasks, 
+                    update task details (title, notes, due dates, completion status), and delete completed or discarded tasks upon user request.
                 </p>
             </div>
 
             <p><strong>Strict Privacy & Data Handling Guarantees:</strong></p>
             <ul>
-                <li><strong>Local-First Storage:</strong> Your tasks and lists are cached locally on your device in a
-                    local SQLite database file.</li>
-                <li><strong>Secure Token Storage:</strong> OAuth 2.0 authentication credentials and tokens are encrypted
-                    using your system's native keyring (Linux Secret Service / KWallet).</li>
-                <li><strong>Direct Encrypted Communication:</strong> All network requests occur directly between your
-                    local machine and Google's official endpoints (<code>https://tasks.googleapis.com</code>) over
-                    HTTPS/TLS.</li>
-                <li><strong>Zero Server Transmission:</strong> <strong>gtasks-gui</strong> operates without any
-                    middleman or external servers. No user data, analytics, or credentials are transmitted to
-                    MCR-Project or third parties.</li>
-                <li><strong>No AI/ML Training:</strong> Google User Data accessed by <strong>gtasks-gui</strong> is
-                    strictly used for core task management functionality and is never used for training Artificial
-                    Intelligence or Machine Learning models.</li>
+                <li><strong>Local-First Storage:</strong> Your tasks and lists are cached locally on your device in a local SQLite database file.</li>
+                <li><strong>Secure Token Storage:</strong> OAuth 2.0 authentication credentials and tokens are encrypted using your system's native keyring (Linux Secret Service / KWallet).</li>
+                <li><strong>Direct Encrypted Communication:</strong> All network requests occur directly between your local machine and Google's official endpoints (<code>https://tasks.googleapis.com</code>) over HTTPS/TLS.</li>
+                <li><strong>Zero Server Transmission:</strong> <strong>gtasks-tui</strong> operates without any middleman or external servers. No user data, analytics, or credentials are transmitted to MCR-Project or third parties.</li>
+                <li><strong>No AI/ML Training:</strong> Google User Data accessed by <strong>gtasks-tui</strong> is strictly used for core task management functionality and is never used for training Artificial Intelligence or Machine Learning models.</li>
             </ul>
         </section>
 
@@ -368,13 +350,11 @@
             <div class="grid">
                 <div class="card">
                     <h3>⚡ Offline-First Architecture</h3>
-                    <p>Read, write, edit, and organize tasks even when disconnected from the internet. Changes queue
-                        automatically in SQLite and sync when reconnected.</p>
+                    <p>Read, write, edit, and organize tasks even when disconnected from the internet. Changes queue automatically in SQLite and sync when reconnected.</p>
                 </div>
                 <div class="card">
                     <h3>🖥️ Modern GTK4 Desktop GUI</h3>
-                    <p>Sleek, native GTK4 & Libadwaita user interface designed following modern GNOME desktop standards.
-                    </p>
+                    <p>Sleek, native GTK4 & Libadwaita user interface designed following modern GNOME desktop standards.</p>
                 </div>
                 <div class="card">
                     <h3>⌨️ Terminal Dashboard (TUI)</h3>
@@ -382,49 +362,42 @@
                 </div>
                 <div class="card">
                     <h3>🧠 Natural Language Date Parsing</h3>
-                    <p>Type task descriptions like "Submit report tomorrow" or "Buy milk today" to automatically set due
-                        dates.</p>
+                    <p>Type task descriptions like "Submit report tomorrow" or "Buy milk today" to automatically set due dates.</p>
                 </div>
                 <div class="card">
                     <h3>🔐 OAuth 2.0 PKCE Security</h3>
-                    <p>Authenticates directly via secure OAuth 2.0 PKCE loopback flow and stores tokens safely in your
-                        system keyring.</p>
+                    <p>Authenticates directly via secure OAuth 2.0 PKCE loopback flow and stores tokens safely in your system keyring.</p>
                 </div>
                 <div class="card">
                     <h3>🌲 Subtask Hierarchy</h3>
-                    <p>Full support for multi-level nested task hierarchies, parent-child task relationships, and
-                        subtask ordering.</p>
+                    <p>Full support for multi-level nested task hierarchies, parent-child task relationships, and subtask ordering.</p>
                 </div>
             </div>
         </section>
 
-        <!-- Privacy & Legal Links -->
+        <!-- Privacy & Compliance Links -->
         <section class="section">
             <h2>Privacy & Compliance</h2>
             <p>
-                We are committed to total transparency and compliance with Google API Services User Data Policies.
+                We are committed to total transparency and compliance with Google API Services User Data Policies. 
                 Read our complete legal documents below:
             </p>
             <p>
-                👉 <a href="privacy.html" style="color: var(--accent); font-weight: 600;">Read the complete gtasks-gui
-                    Privacy Policy</a><br>
-                👉 <a href="LICENSE" style="color: var(--accent); font-weight: 600;">View the MIT License & Terms of
-                    Service</a>
+                👉 <a href="privacy.html" style="color: var(--accent); font-weight: 600;">Read the complete gtasks-tui Privacy Policy</a><br>
+                👉 <a href="LICENSE" style="color: var(--accent); font-weight: 600;">View the MIT License & Terms of Service</a>
             </p>
         </section>
 
     </main>
 
     <footer id="contact">
-        <p><strong>gtasks-gui</strong> is an open-source project maintained by <strong>MCR-Project</strong>.</p>
+        <p><strong>gtasks-tui</strong> is an open-source project maintained by <strong>MCR-Project</strong>.</p>
         <p style="margin-top: 0.5rem;">
-            GitHub Repository: <a
-                href="https://github.com/MCR-Project/google-tasks-gui">MCR-Project/google-tasks-gui</a> |
+            GitHub Repository: <a href="https://github.com/MCR-Project/google-tasks-gui">MCR-Project/google-tasks-gui</a> | 
             Contact Support: <a href="mailto:alexis.insalaco@gmail.com">alexis.insalaco@gmail.com</a>
         </p>
         <p style="margin-top: 1rem; font-size: 0.85rem; color: #64748b;">
-            © 2026 MCR-Project. Google Tasks is a registered trademark of Google LLC. gtasks-gui is an independent
-            open-source application.
+            © 2026 MCR-Project. Google Tasks is a registered trademark of Google LLC. gtasks-tui is an independent open-source application.
         </p>
     </footer>
 
