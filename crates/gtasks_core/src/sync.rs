@@ -95,11 +95,11 @@ async fn perform_single_sync(
     last_sync_time: &mut Option<DateTime<Utc>>,
 ) -> crate::Result<DateTime<Utc>> {
     let sync_start = Utc::now();
-    let mut client = obtain_authenticated_client().await?;
+    let client = obtain_authenticated_client().await?;
     let mut db = tokio::task::spawn_blocking(|| Database::new("task_lists.db")).await??;
 
-    sync_local_to_db(&mut client, &mut db).await?;
-    sync_remote_to_db_delta(&mut client, &mut db, *last_sync_time).await?;
+    sync_local_to_db(&client, &mut db).await?;
+    sync_remote_to_db_delta(&client, &mut db, *last_sync_time).await?;
 
     *last_sync_time = Some(sync_start);
     Ok(sync_start)

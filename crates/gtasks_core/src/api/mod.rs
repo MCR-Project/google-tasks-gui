@@ -1,5 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct TaskList {
@@ -51,23 +53,70 @@ pub struct TasksResponse {
     pub next_page_token: Option<String>,
 }
 
+/// Patch payload builder for updating task fields.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct TaskPatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub due: Option<String>,
+}
+
+impl TaskPatch {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn title(mut self, title: impl Into<String>) -> Self {
+        self.title = Some(title.into());
+        self
+    }
+
+    pub fn notes(mut self, notes: impl Into<String>) -> Self {
+        self.notes = Some(notes.into());
+        self
+    }
+
+    pub fn completed(mut self, completed: bool) -> Self {
+        self.status = Some(if completed {
+            "completed".to_string()
+        } else {
+            "needsAction".to_string()
+        });
+        self
+    }
+
+    pub fn due(mut self, due: &chrono::DateTime<chrono::Utc>) -> Self {
+        self.due = Some(due.to_rfc3339());
+        self
+    }
+}
+
 // API
 #[derive(Debug, Clone)]
 pub struct GoogleTasksClient {
     pub client: reqwest::Client,
-    pub access_token: String,
+    pub access_token: Arc<RwLock<String>>,
 }
 
 impl GoogleTasksClient {
     pub fn new(access_token: String) -> Self {
         Self {
             client: reqwest::Client::new(),
-            access_token,
+            access_token: Arc::new(RwLock::new(access_token)),
         }
     }
 
+    pub async fn get_access_token(&self) -> String {
+        self.access_token.read().await.clone()
+    }
+
     // Get the list of task lists for the authenticated user
-    pub async fn get_task_lists(&mut self) -> Result<Vec<TaskList>, reqwest::Error> {
+    pub async fn get_task_lists(&self) -> crate::Result<Vec<TaskList>> {
         let url = "https://www.googleapis.com/tasks/v1/users/@me/lists";
         let mut all_lists = Vec::new();
         let mut page_token: Option<String> = None;
@@ -99,7 +148,7 @@ impl GoogleTasksClient {
     }
 
     // Create a new task list
-    pub async fn create_task_list(&mut self, title: &str) -> Result<TaskList, reqwest::Error> {
+    pub async fn create_task_list(&self, title: &str) -> crate::Result<TaskList> {
         let url = "https://www.googleapis.com/tasks/v1/users/@me/lists";
         let payload = serde_json::json!({ "title": title });
         let response = self
@@ -110,7 +159,7 @@ impl GoogleTasksClient {
         Ok(created)
     }
 
-    pub async fn delete_task_list(&mut self, list_id: &str) -> Result<(), reqwest::Error> {
+    pub async fn delete_task_list(&self, list_id: &str) -> crate::Result<()> {
         let url = format!(
             "https://www.googleapis.com/tasks/v1/users/@me/lists/{}",
             list_id
@@ -129,11 +178,11 @@ impl GoogleTasksClient {
 
     // Get the tasks for a specific task list
     pub async fn get_tasks(
-        &mut self,
+        &self,
         list_id: &str,
         show_completed: bool,
         updated_min: Option<&chrono::DateTime<chrono::Utc>>,
-    ) -> Result<Vec<TaskGet>, reqwest::Error> {
+    ) -> crate::Result<Vec<TaskGet>> {
         let url = format!(
             "https://www.googleapis.com/tasks/v1/lists/{}/tasks",
             list_id
@@ -177,10 +226,10 @@ impl GoogleTasksClient {
     }
 
     pub async fn create_task(
-        &mut self,
+        &self,
         list_id: &str,
         task: &TaskLocal,
-    ) -> Result<TaskGet, reqwest::Error> {
+    ) -> crate::Result<TaskGet> {
         let url = format!(
             "https://www.googleapis.com/tasks/v1/lists/{}/tasks",
             list_id
@@ -200,85 +249,75 @@ impl GoogleTasksClient {
         Ok(created_task)
     }
 
+    pub async fn patch_task(
+        &self,
+        list_id: &str,
+        task_id: &str,
+        patch: &TaskPatch,
+    ) -> crate::Result<TaskGet> {
+        let url = format!(
+            "https://www.googleapis.com/tasks/v1/lists/{list_id}/tasks/{task_id}"
+        );
+        let response = self
+            .execute_with_retry(|client, token| client.patch(&url).bearer_auth(token).json(patch))
+            .await?;
+        let response = response.error_for_status()?;
+        let updated_task: TaskGet = response.json().await?;
+        Ok(updated_task)
+    }
+
     pub async fn update_task(
-        &mut self,
+        &self,
         list_id: &str,
         task_id: &str,
         title: Option<&str>,
         notes: Option<&str>,
         completed: Option<bool>,
         due: Option<&chrono::DateTime<chrono::Utc>>,
-    ) -> Result<TaskGet, reqwest::Error> {
-        let url = format!(
-            "https://www.googleapis.com/tasks/v1/lists/{list_id}/tasks/{task_id}",
-            list_id = list_id,
-            task_id = task_id
-        );
-
-        let mut body = serde_json::Map::new();
-        if let Some(title) = title {
-            body.insert(
-                "title".to_string(),
-                serde_json::Value::String(title.to_string()),
-            );
+    ) -> crate::Result<TaskGet> {
+        let mut patch = TaskPatch::new();
+        if let Some(t) = title {
+            patch = patch.title(t);
         }
-        if let Some(notes) = notes {
-            body.insert(
-                "notes".to_string(),
-                serde_json::Value::String(notes.to_string()),
-            );
+        if let Some(n) = notes {
+            patch = patch.notes(n);
         }
-        if let Some(due) = due {
-            body.insert(
-                "due".to_string(),
-                serde_json::Value::String(due.to_rfc3339()),
-            );
+        if let Some(c) = completed {
+            patch = patch.completed(c);
         }
-        if let Some(completed) = completed {
-            let status_str = if completed {
-                "completed"
-            } else {
-                "needsAction"
-            };
-            body.insert(
-                "status".to_string(),
-                serde_json::Value::String(status_str.to_string()),
-            );
+        if let Some(d) = due {
+            patch = patch.due(d);
         }
-
-        let response = self
-            .execute_with_retry(|client, token| client.patch(&url).bearer_auth(token).json(&body))
-            .await?;
-        let response = response.error_for_status()?;
-        let toggled_task: TaskGet = response.json().await?;
-        Ok(toggled_task)
+        self.patch_task(list_id, task_id, &patch).await
     }
 
     pub async fn toggle_task_completion(
-        &mut self,
+        &self,
         list_id: &str,
         task_id: &str,
         completed: bool,
-    ) -> Result<TaskGet, reqwest::Error> {
+    ) -> crate::Result<TaskGet> {
         self.update_task(list_id, task_id, None, None, Some(completed), None)
             .await
     }
 
     async fn execute_with_retry(
-        &mut self,
+        &self,
         build_request: impl Fn(&reqwest::Client, &str) -> reqwest::RequestBuilder,
-    ) -> Result<reqwest::Response, reqwest::Error> {
-        let request = build_request(&self.client, &self.access_token);
+    ) -> crate::Result<reqwest::Response> {
+        let token = self.access_token.read().await.clone();
+        let request = build_request(&self.client, &token);
         let response = request.send().await?;
 
         if response.status() == reqwest::StatusCode::UNAUTHORIZED {
             if let Ok(refresh_token) = crate::auth::keyring::get_refresh_token() {
                 if let Ok(token_response) = crate::auth::refresh_access_token(&refresh_token).await
                 {
-                    self.access_token = token_response.access_token;
+                    let mut token_writer = self.access_token.write().await;
+                    *token_writer = token_response.access_token.clone();
 
-                    let retry_token = build_request(&self.client, &self.access_token);
-                    return retry_token.send().await;
+                    let retry_token = build_request(&self.client, &token_response.access_token);
+                    return Ok(retry_token.send().await?);
                 }
             }
         }
@@ -286,14 +325,12 @@ impl GoogleTasksClient {
     }
 
     pub async fn delete_task(
-        &mut self,
+        &self,
         list_id: &str,
         task_id: &str,
-    ) -> Result<(), reqwest::Error> {
+    ) -> crate::Result<()> {
         let url = format!(
-            "https://www.googleapis.com/tasks/v1/lists/{list_id}/tasks/{task_id}",
-            list_id = list_id,
-            task_id = task_id
+            "https://www.googleapis.com/tasks/v1/lists/{list_id}/tasks/{task_id}"
         );
 
         let response = self

@@ -57,7 +57,7 @@ pub mod error;
 pub mod sync;
 pub mod util;
 
-pub use api::{GoogleTasksClient, TaskList, TaskLocal};
+pub use api::{GoogleTasksClient, TaskList, TaskLocal, TaskPatch};
 pub use db::Database;
 pub use error::{GTasksError, Result};
 pub use sync::{SyncCommand, SyncEvent, SyncManager};
@@ -89,7 +89,7 @@ pub async fn obtain_authenticated_client() -> crate::error::Result<GoogleTasksCl
 
 /// Fetches task lists and tasks from Google API in parallel with optional delta timestamp caching into SQLite.
 pub async fn sync_remote_to_db_delta(
-    client: &mut GoogleTasksClient,
+    client: &GoogleTasksClient,
     db: &mut Database,
     last_sync: Option<chrono::DateTime<chrono::Utc>>,
 ) -> crate::error::Result<()> {
@@ -99,7 +99,7 @@ pub async fn sync_remote_to_db_delta(
     tokio::task::spawn_blocking(move || db_clone.save_task_lists(&lists_clone)).await??;
 
     let fetch_futures = lists.iter().map(|list| {
-        let mut client_clone = client.clone();
+        let client_clone = client.clone();
         let list_id = list.id.clone();
         async move {
             let raw_tasks = client_clone
@@ -136,16 +136,17 @@ pub async fn sync_remote_to_db_delta(
 }
 
 pub async fn sync_remote_to_db(
-    client: &mut GoogleTasksClient,
+    client: &GoogleTasksClient,
     db: &mut Database,
 ) -> crate::error::Result<()> {
     sync_remote_to_db_delta(client, db, None).await
 }
 
 pub async fn sync_local_to_db(
-    client: &mut GoogleTasksClient,
+    client: &GoogleTasksClient,
     db: &mut Database,
 ) -> crate::error::Result<()> {
+
 
     // 0. Sync pending local task lists created offline/locally
     let db_clone = db.clone();
