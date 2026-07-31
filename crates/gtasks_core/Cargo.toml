@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 description = "Core logic for Google Tasks TUI"
+readme = "README.md"
+
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
