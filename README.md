@@ -11,7 +11,8 @@
 
 **gtasks-tui** is an open-source productivity application designed to provide Linux users with a fast, native desktop client and terminal dashboard for managing their **Google Tasks**.
 
-### Key Application Purpose:
+### Key Application Purpose
+
 - **Task Management:** Allows users to view, create, edit, reorder, mark complete, and organize task lists and subtasks in their Google Account directly from Linux.
 - **Google Tasks API Usage:** `gtasks-tui` requests access to the official Google Tasks API (`https://www.googleapis.com/auth/tasks`) exclusively to display your tasks, synchronize task modifications made in the app, and allow seamless offline and online task management.
 - **Offline Support & Synchronization:** Tasks are stored in a local SQLite cache so you can manage your to-do lists without an active internet connection. Any changes made offline automatically synchronize with your Google Tasks account when online.
@@ -192,10 +193,10 @@ Contributions are very welcome! If you find a bug or have a feature suggestion, 
 
 ## 🔒 Privacy Policy
 
-gtasks-tui is a local-first application and prioritizes your data privacy. Google Tasks data and OAuth tokens are strictly stored locally on your device or in your OS Keyring and are never transmitted to any third-party servers. For details, see the complete [Privacy Policy](file:///home/alex_insc/project/gtasks-tui/PRIVACY.md).
+gtasks-tui is a local-first application and prioritizes your data privacy. Google Tasks data and OAuth tokens are strictly stored locally on your device or in your OS Keyring and are never transmitted to any third-party servers. For details, see the complete [Privacy Policy](./PRIVACY.md).
 
 ---
 
 ## 📄 License
 
-This project is licensed under the **MIT License** - see the [LICENSE](file:///home/alex_insc/project/gtasks-tui/LICENSE) file for details.
+This project is licensed under the **MIT License** - see the [LICENSE](./LICENSE) file for details.
