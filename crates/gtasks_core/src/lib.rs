@@ -57,7 +57,7 @@ pub mod error;
 pub mod sync;
 pub mod util;
 
-pub use api::{GoogleTasksClient, TaskList, TaskLocal, TaskPatch};
+pub use api::{GoogleTasksClient, TaskGet, TaskId, TaskList, TaskListId, TaskLocal, TaskPatch, TaskStatus};
 pub use db::Database;
 pub use error::{GTasksError, Result};
 pub use sync::{SyncCommand, SyncEvent, SyncManager};
@@ -146,8 +146,6 @@ pub async fn sync_local_to_db(
     client: &GoogleTasksClient,
     db: &mut Database,
 ) -> crate::error::Result<()> {
-
-
     // 0. Sync pending local task lists created offline/locally
     let db_clone = db.clone();
     if let Ok(dirty_lists) = tokio::task::spawn_blocking(move || db_clone.get_dirty_task_lists()).await? {
@@ -176,10 +174,7 @@ pub async fn sync_local_to_db(
     let db_clone = db.clone();
     if let Ok(pending_deletions) = tokio::task::spawn_blocking(move || db_clone.get_pending_deletions()).await? {
         for task in pending_deletions {
-            if !task.id.is_empty()
-                && !task.id.starts_with("local_")
-                && !task.list_id.starts_with("list_")
-            {
+            if !task.is_local_id() && !task.is_local_list() {
                 if let Err(err) = client.delete_task(&task.list_id, &task.id).await {
                     tracing::error!("Error deleting remote task {}: {}", task.id, err);
                     continue;
@@ -203,11 +198,12 @@ pub async fn sync_local_to_db(
     }
 
     for mut task in dirty_tasks {
-        if task.list_id.starts_with("list_") {
+        if task.is_local_list() {
             continue;
         }
 
-        if task.id.is_empty() || task.id.starts_with("local_") {
+        if task.is_local_id() {
+
             let temp_id = task.id.clone();
             let raw_task = client.create_task(&task.list_id, &task).await?;
             let db_clone = db.clone();

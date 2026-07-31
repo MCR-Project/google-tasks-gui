@@ -381,6 +381,14 @@ impl TaskLocal {
         }
     }
 
+    pub fn is_local_id(&self) -> bool {
+        TaskId::new(&self.id).is_local()
+    }
+
+    pub fn is_local_list(&self) -> bool {
+        TaskListId::new(&self.list_id).is_local()
+    }
+
     pub fn toggle_task_completion(&self) -> TaskLocal {
         let mut updated_task = self.clone();
         updated_task.is_completed = !self.is_completed;
@@ -392,3 +400,77 @@ impl TaskLocal {
         updated_task
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TaskStatus {
+    NeedsAction,
+    Completed,
+}
+
+impl TaskStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TaskStatus::NeedsAction => "needsAction",
+            TaskStatus::Completed => "completed",
+        }
+    }
+}
+
+impl From<&str> for TaskStatus {
+    fn from(s: &str) -> Self {
+        match s {
+            "completed" => TaskStatus::Completed,
+            _ => TaskStatus::NeedsAction,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct TaskId(pub String);
+
+impl TaskId {
+    pub fn new(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
+
+    pub fn is_local(&self) -> bool {
+        self.0.is_empty() || self.0.starts_with("local_")
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for TaskId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct TaskListId(pub String);
+
+impl TaskListId {
+    pub fn new(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
+
+    pub fn is_local(&self) -> bool {
+        self.0.starts_with("list_")
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for TaskListId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
