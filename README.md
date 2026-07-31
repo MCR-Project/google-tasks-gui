@@ -7,13 +7,22 @@
 
 > A modern, fast, offline-first **Google Tasks** desktop client & terminal dashboard for Linux built with **Rust**.
 
+## 🎯 Purpose & Functionality
+
+**gtasks-tui** is an open-source productivity application designed to provide Linux users with a fast, native desktop client and terminal dashboard for managing their **Google Tasks**.
+
+### Key Application Purpose:
+- **Task Management:** Allows users to view, create, edit, reorder, mark complete, and organize task lists and subtasks in their Google Account directly from Linux.
+- **Google Tasks API Usage:** `gtasks-tui` requests access to the official Google Tasks API (`https://www.googleapis.com/auth/tasks`) exclusively to display your tasks, synchronize task modifications made in the app, and allow seamless offline and online task management.
+- **Offline Support & Synchronization:** Tasks are stored in a local SQLite cache so you can manage your to-do lists without an active internet connection. Any changes made offline automatically synchronize with your Google Tasks account when online.
+
 ---
 
 ## 📌 Overview & Highlights
 
-**gTasks** is a high-performance native desktop client for Google Tasks on Linux. It bridges the gap between terminal productivity and desktop UI by providing a fast, offline-first experience with seamless background synchronization.
+**gtasks-tui** is a high-performance native desktop client for Google Tasks on Linux. It bridges the gap between terminal productivity and desktop UI by providing a fast, offline-first experience with seamless background synchronization.
 
-Whether you prefer a keyboard-driven Terminal User Interface (TUI) or a sleek GTK4 desktop app, **gTasks** keeps your task lists in sync while storing your credentials safely in your OS keyring.
+Whether you prefer a keyboard-driven Terminal User Interface (TUI) or a sleek GTK4 desktop app, **gtasks-tui** keeps your task lists in sync while storing your credentials safely in your OS keyring.
 
 ### ✨ Key Features
 
@@ -61,7 +70,7 @@ The repository is structured as a Rust Cargo Workspace:
 
 ## 🛠️ Prerequisites & System Requirements
 
-To build **gTasks** on Linux, ensure you have the Rust toolchain installed alongside native development headers:
+To build **gtasks-tui** on Linux, ensure you have the Rust toolchain installed alongside native development headers:
 
 ### 1. Install System Dependencies
 
@@ -183,7 +192,7 @@ Contributions are very welcome! If you find a bug or have a feature suggestion, 
 
 ## 🔒 Privacy Policy
 
-gTasks is a local-first application and prioritizes your data privacy. Google Tasks data and OAuth tokens are strictly stored locally on your device or in your OS Keyring and are never transmitted to any third-party servers. For details, see the complete [Privacy Policy](file:///home/alex_insc/project/gtasks-tui/PRIVACY.md).
+gtasks-tui is a local-first application and prioritizes your data privacy. Google Tasks data and OAuth tokens are strictly stored locally on your device or in your OS Keyring and are never transmitted to any third-party servers. For details, see the complete [Privacy Policy](file:///home/alex_insc/project/gtasks-tui/PRIVACY.md).
 
 ---
 
