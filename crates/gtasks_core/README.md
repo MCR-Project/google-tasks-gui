@@ -1,115 +1,41 @@
 # gtasks_core
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Language: Rust](https://img.shields.io/badge/Language-Rust-orange.svg)](https://www.rust-lang.org/)
-[![Crates.io](https://img.shields.io/crates/v/gtasks_core.svg)](https://crates.io/crates/gtasks_core)
+[![Crates.io](https://img.shields.io/crates/v/gtasks_core.svg?style=flat-square)](https://crates.io/crates/gtasks_core)
+[![docs.rs](https://img.shields.io/docsrs/gtasks_core?style=flat-square)](https://docs.rs/gtasks_core)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/MCR-Project/google-tasks-gui/ci.yml?branch=main&style=flat-square)](https://github.com/MCR-Project/google-tasks-gui)
 
-`gtasks_core` is the foundational engine and synchronization library behind **gtasks**, a modern Google Tasks client ecosystem for Linux. It provides low-level integrations for OAuth 2.0 PKCE authentication, SQLite database operations, real-time sync conflict handling, and natural language date parsing.
+`gtasks_core` is an offline-first, thread-safe Rust SDK and engine for the **Google Tasks API**. 
 
-This library can be used independently to build custom clients, automation daemons, or scripting utilities interacting with the Google Tasks API.
-
----
-
-## 🚀 Key Features
-
-*   🔄 **Delta Synchronization Engine:** Efficiently syncs remote changes using `updated` timestamps. Tracks local modifications with a dirty-bit state to push changes back upstream.
-*   📴 **Offline-First Storage:** Integrated thread-safe SQLite database wrapper (`rusqlite`) that manages local schemas, transactions, and soft-deletions.
-*   🔑 **Secure Credentials Flow:** Implements standard OAuth 2.0 Authorization Code Flow with PKCE. Saves encrypted refresh tokens securely using the OS Keyring (`keyring` crate targeting D-Bus Secret Service, KWallet, etc.).
-*   🌲 **Hierarchy Processing:** Processes list responses into parent-child subtask trees, preserving visual ordering.
-*   🧠 **Natural Language Parsing:** Parses smart terms (like `"tomorrow"`, `"next monday"`) directly from string inputs to set appropriate task due dates.
+Designed as the core foundation for terminal (TUI) and graphical (GUI) task managers, `gtasks_core` provides zero-hassle OAuth 2.0 PKCE authentication, automatic OS keyring credential persistence, thread-safe SQLite local caching, background delta synchronization, and natural-language date parsing.
 
 ---
 
-## 🛠️ Usage & Examples
+## ✨ Features
 
-### 1. Connecting and Authenticating
-The engine handles the login state automatically, requesting user authentication via browser loopback server if no refresh token is stored in the system keyring.
-
-```rust
-use gtasks_core::obtain_authenticated_client;
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Retrieves client using local OS Keyring or spawns browser flow
-    let mut client = obtain_authenticated_client().await?;
-    
-    // Fetch remote task lists
-    let lists = client.get_task_lists().await?;
-    for list in lists {
-        println!("List: {} ({})", list.title, list.id);
-    }
-    
-    Ok(())
-}
-```
-
-### 2. Initializing the Local SQLite Database
-`gtasks_core` packages a database manager that automatically sets up and manages tables for lists and tasks:
-
-```rust
-use gtasks_core::Database;
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let db = Database::new("task_lists.db")?;
-    
-    // Retrieve cached tasks for a list
-    let cached_tasks = db.get_tasks("some-list-id")?;
-    for task in cached_tasks {
-        println!("Task: {} [Completed: {}]", task.title, task.is_completed);
-    }
-    
-    Ok(())
-}
-```
-
-### 3. Parsing Natural Language Dates
-You can extract dates from user input:
-
-```rust
-use gtasks_core::util::parse_nlp_task;
-
-fn main() {
-    let raw_input = "Write Rust code tomorrow";
-    let (cleaned_title, parsed_due_date) = parse_nlp_task(raw_input);
-    
-    assert_eq!(cleaned_title, "Write Rust code");
-    assert!(parsed_due_date.is_some());
-    println!("Due date parsed: {:?}", parsed_due_date);
-}
-```
+* 🔐 **Automatic OAuth 2.0 + PKCE:** Handles the browser authentication handshake and securely persists refresh tokens in system secret stores (D-Bus Secret Service, KWallet, macOS Keychain).
+* 🔄 **Bidirectional Delta Synchronization:** Periodically synchronizes remote modifications using `updatedMin` RFC3339 timestamps while maintaining local dirty states for offline operations.
+* 📴 **Offline-First SQLite Cache:** High-performance, thread-safe SQLite persistence layer powered by `rusqlite` for local read/write performance.
+* 🌲 **Subtask Tree Ordering:** Processes flat API responses into hierarchical parent-child task structures while maintaining custom visual ordering.
+* 🧠 **Natural Language Processing (NLP):** Built-in date parser extracting temporal expressions like `"today"`, `"tomorrow"`, or `"next monday"` directly from task titles.
+* ⚡ **Actor-Based Background Sync:** Non-blocking async `SyncManager` actor for background sync polling and window focus triggers.
 
 ---
 
-## 🧱 Architecture Details
+## 📦 Installation
 
-```text
-               ┌───────────────────────────────────────┐
-               │         Client Application            │
-               └───────────┬───────────────────┬───────┘
-                           │                   │
-                           ▼                   ▼
-               ┌───────────────────────────────────────┐
-               │          gtasks_core API              │
-               └───────────┬───────────────────┬───────┘
-                           │                   │
-                           ▼                   ▼
-               ┌───────────────────────┐   ┌───────────────────────┐
-               │    Local DB (SQLite)  │   │ Google REST API Sync  │
-               └───────────────────────┘   └───────────────────────┘
+Add `gtasks_core` to your `Cargo.toml`:
+
+```toml
+[dependencies]
+gtasks_core = "0.1.1"
+tokio = { version = "1.0", features = ["full"] }
+chrono = { version = "0.4", features = ["serde"] }
 ```
 
-The core is structured as:
-*   **`api`**: Wrappers around the Google Tasks REST endpoints.
-*   **`auth`**: PKCE flow logic and OS keychain integration.
-*   **`db`**: Thread-safe database transactions and updates.
-*   **`sync`**: Synchronization worker coordination.
-*   **`util`**: Date extraction, task trees, and helpers.
+### System Prerequisites
 
----
-
-## 🛠️ System Prerequisites
-
-Building the crate requires standard SSL, Secret Service, and GCC headers on your system:
+To build system keyring bindings (`keyring`) and OpenSSL dependencies on Linux, install the required development headers:
 
 ```bash
 # Ubuntu / Debian
@@ -124,10 +50,110 @@ sudo pacman -S base-devel openssl libsecret
 
 ---
 
+## 🚀 Quickstart
+
+### 1. Authenticate & Perform API Operations
+
+`obtain_authenticated_client()` automatically retrieves saved credentials from the system keyring, or initiates a browser OAuth PKCE authorization loop if no valid token exists.
+
+```rust
+use gtasks_core::obtain_authenticated_client;
+use std::error::Error;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    // 1. Authenticate (Keyring lookup -> Browser PKCE fallback)
+    let mut client = obtain_authenticated_client().await?;
+
+    // 2. Fetch remote task lists
+    let lists = client.get_task_lists().await?;
+    println!("Found {} task lists:", lists.len());
+    
+    for list in &lists {
+        println!(" - {} (ID: {})", list.title, list.id);
+    }
+
+    // 3. Create a new task list
+    let task_list = client
+        .create_task_list("Shopping List")
+        .await?;
+    println!("Created task list: {}", task_list.title);
+
+    Ok(())
+}
+```
+
+### 2. Offline-First SQLite Synchronization
+
+Use `Database` for local persistence and `sync_remote_to_db` for bidirectional synchronization:
+
+```rust
+use gtasks_core::{obtain_authenticated_client, Database, sync_remote_to_db};
+use std::error::Error;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let mut client = obtain_authenticated_client().await?;
+    let mut db = Database::new("tasks_cache.db")?;
+
+    // Perform bidirectional sync: Local dirty tasks -> Google API -> SQLite
+    sync_remote_to_db(&mut client, &mut db).await?;
+
+    // Query cached tasks offline
+    let tasks = db.get_all_tasks()?;
+    for task in tasks {
+        let status = if task.is_completed { "✓" } else { " " };
+        println!("[{}] {}", status, task.title.unwrap_or_default());
+    }
+
+    Ok(())
+}
+```
+
+---
+
+## 🏗️ Architecture Overview
+
+```text
+               ┌──────────────────────────────────────────────┐
+               │    Client App (TUI / GUI / CLI Script)       │
+               └──────────────┬────────────────┬──────────────┘
+                              │                │
+            Local Queries &   │                │ Background Events
+            Offline Writes    ▼                ▼
+               ┌────────────────────┐    ┌────────────────────┐
+               │  Database (SQLite) │    │    SyncManager     │
+               └─────────▲──────────┘    └─────────┬──────────┘
+                         │                         │
+                         └──────────┬──────────────┘
+                                    │ Network Sync
+                                    ▼
+               ┌──────────────────────────────────────────────┐
+               │         GoogleTasksClient (REST API)         │
+               └────────────────────┬─────────────────────────┘
+                                    │ HTTPS (Bearer Auth)
+                                    ▼
+               ┌──────────────────────────────────────────────┐
+               │              Google Tasks API                │
+               └──────────────────────────────────────────────┘
+```
+
+The library is organized into specialized modules:
+
+| Module | Description |
+| :--- | :--- |
+| [`api`](https://docs.rs/gtasks_core/latest/gtasks_core/api/index.html) | Direct Google Tasks REST API client with exponential backoff and retry handlers. |
+| [`auth`](https://docs.rs/gtasks_core/latest/gtasks_core/auth/index.html) | OAuth 2.0 PKCE challenge generator, token refresh, and OS keyring persistence. |
+| [`db`](https://docs.rs/gtasks_core/latest/gtasks_core/db/index.html) | Thread-safe SQLite schema, CRUD operations, transactions, and soft-delete queues. |
+| [`sync`](https://docs.rs/gtasks_core/latest/gtasks_core/sync/index.html) | MPSC actor managing active/idle sync interval loops and window state updates. |
+| [`util`](https://docs.rs/gtasks_core/latest/gtasks_core/util/index.html) | Natural language date parsing and hierarchical task tree layout algorithms. |
+
+---
+
 ## 🤝 Contributing
 
-Contributions are welcome! Submit a PR or open issues for feature requests.
+Contributions, issues, and feature requests are welcome! Feel free to check the [issues page](https://github.com/MCR-Project/google-tasks-gui/issues).
 
 ## 📄 License
 
-This library is licensed under the **MIT License**.
+Distributed under the **MIT License**. See `LICENSE.md` for details.
