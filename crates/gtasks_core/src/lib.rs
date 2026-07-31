@@ -57,10 +57,12 @@ pub mod error;
 pub mod sync;
 pub mod util;
 
-pub use api::{GoogleTasksClient, TaskGet, TaskId, TaskList, TaskListId, TaskLocal, TaskPatch, TaskStatus};
-pub use db::Database;
+pub use api::{GoogleTasksClient, TaskGet, TaskId, TaskList, TaskListId, TaskLocal, TaskPatch, TaskStatus, TasksApi};
+pub use auth::{authenticate_with_handler, OAuthConfig};
+pub use db::{Database, TaskRepository};
 pub use error::{GTasksError, Result};
 pub use sync::{SyncCommand, SyncEvent, SyncManager};
+
 pub use util::{order_tasks_hierarchically, parse_nlp_task};
 use futures::future::join_all;
 

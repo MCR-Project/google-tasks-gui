@@ -371,6 +371,49 @@ impl Database {
     }
 }
 
+pub trait TaskRepository: Send + Sync {
+    fn save_task_lists(&self, task_lists: &[TaskList]) -> crate::Result<()>;
+    fn get_task_lists(&self) -> crate::Result<Vec<TaskList>>;
+    fn get_dirty_task_lists(&self) -> crate::Result<Vec<TaskList>>;
+    fn delete_task_list_db(&self, list_id: &str) -> crate::Result<()>;
+    fn get_tasks_for_list(&self, list_id: &str) -> crate::Result<Vec<TaskLocal>>;
+    fn get_dirty_task(&self) -> crate::Result<Vec<TaskLocal>>;
+    fn save_tasks(&self, tasks: &[TaskLocal]) -> crate::Result<()>;
+    fn mark_task_clean(&self, task_id: &str) -> crate::Result<()>;
+    fn purge_task(&self, task_id: &str) -> crate::Result<()>;
+}
+
+impl TaskRepository for Database {
+    fn save_task_lists(&self, task_lists: &[TaskList]) -> crate::Result<()> {
+        self.save_task_lists(task_lists).map_err(Into::into)
+    }
+    fn get_task_lists(&self) -> crate::Result<Vec<TaskList>> {
+        self.get_task_lists().map_err(Into::into)
+    }
+    fn get_dirty_task_lists(&self) -> crate::Result<Vec<TaskList>> {
+        self.get_dirty_task_lists().map_err(Into::into)
+    }
+    fn delete_task_list_db(&self, list_id: &str) -> crate::Result<()> {
+        self.delete_task_list_db(list_id).map_err(Into::into)
+    }
+    fn get_tasks_for_list(&self, list_id: &str) -> crate::Result<Vec<TaskLocal>> {
+        self.get_tasks_for_list(list_id).map_err(Into::into)
+    }
+    fn get_dirty_task(&self) -> crate::Result<Vec<TaskLocal>> {
+        self.get_dirty_task().map_err(Into::into)
+    }
+    fn save_tasks(&self, tasks: &[TaskLocal]) -> crate::Result<()> {
+        self.save_tasks(tasks).map_err(Into::into)
+    }
+    fn mark_task_clean(&self, task_id: &str) -> crate::Result<()> {
+        self.mark_task_clean(task_id).map_err(Into::into)
+    }
+    fn purge_task(&self, task_id: &str) -> crate::Result<()> {
+        self.purge_task(task_id).map_err(Into::into)
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;

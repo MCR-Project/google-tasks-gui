@@ -24,6 +24,24 @@ pub struct PkceChallenge {
     pub state: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct OAuthConfig {
+    pub client_id: String,
+    pub client_secret: String,
+    pub redirect_port: Option<u16>,
+}
+
+impl OAuthConfig {
+    pub fn from_env() -> crate::Result<Self> {
+        let (client_id, client_secret) = resolve_client_credentials()?;
+        Ok(Self {
+            client_id,
+            client_secret,
+            redirect_port: None,
+        })
+    }
+}
+
 fn resolve_client_credentials() -> crate::Result<(String, String)> {
     let client_id = match option_env!("GOOGLE_CLIENT_ID") {
         Some(val) if !val.is_empty() => val.to_string(),
@@ -58,29 +76,30 @@ pub fn generate_pkce() -> PkceChallenge {
     }
 }
 
-pub async fn authenticate() -> crate::Result<TokenResponse> {
-    let (client_id, client_secret) = resolve_client_credentials()?;
-
-    // Start a simple HTTP server to listen for the OAuth callback
-    let listener = match TcpListener::bind("127.0.0.1:8080").await {
+pub async fn authenticate_with_handler<F>(
+    config: &OAuthConfig,
+    url_handler: F,
+) -> crate::Result<TokenResponse>
+where
+    F: FnOnce(&str) -> Result<(), Box<dyn std::error::Error + Send + Sync>>,
+{
+    let port = config.redirect_port.unwrap_or(8080);
+    let listener = match TcpListener::bind(format!("127.0.0.1:{port}")).await {
         Ok(l) => l,
         Err(_) => TcpListener::bind("127.0.0.1:0").await?,
     };
-    let port = listener.local_addr()?.port();
-    let redirect_uri = format!("http://127.0.0.1:{}/callback", port);
+    let local_port = listener.local_addr()?.port();
+    let redirect_uri = format!("http://127.0.0.1:{local_port}/callback");
     let scope = "https://www.googleapis.com/auth/tasks";
 
-    // Generate PKCE code_verifier and code_challenge
     let pkce = generate_pkce();
 
-    // Construct the authorization URL with PKCE parameters
     let auth_url = format!(
         "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri={}&response_type=code&scope={}&access_type=offline&prompt=consent&code_challenge={}&code_challenge_method=S256&state={}",
-        client_id, redirect_uri, scope, pkce.code_challenge, pkce.state
+        config.client_id, redirect_uri, scope, pkce.code_challenge, pkce.state
     );
 
-    tracing::info!("Please open the following URL in your browser to authenticate:");
-    open::that(&auth_url)?;
+    url_handler(&auth_url).map_err(|e| crate::GTasksError::Auth(e.to_string()))?;
     tracing::info!("Listening for OAuth callback on {}...", redirect_uri);
 
     let (mut socket, _) = listener.accept().await?;
@@ -88,25 +107,23 @@ pub async fn authenticate() -> crate::Result<TokenResponse> {
     let _ = socket.read(&mut buffer).await?;
     let request_str = String::from_utf8_lossy(&buffer);
 
-    // Extract the authorization code and state from the request
     let (code, returned_state) = extract_code_and_state_from_request(&request_str)
-        .ok_or("Failed to extract authorization code from browser callback")?;
+        .ok_or_else(|| crate::GTasksError::Auth("Failed to extract authorization code from browser callback".to_string()))?;
 
     if returned_state != pkce.state {
-        return Err("OAuth State mismatch".into());
+        return Err(crate::GTasksError::Auth("OAuth State mismatch".to_string()));
     }
 
     let http_response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<html><body><h1>Authentication successful! You can close this window.</h1></body></html>";
     socket.write_all(http_response.as_bytes()).await?;
 
-    // Exchange the authorization code for an access token using PKCE verifier
     tracing::info!("Exchanging authorization code for access token...");
     let client = reqwest::Client::new();
     let token_response = client
         .post("https://oauth2.googleapis.com/token")
         .form(&[
-            ("client_id", client_id.as_str()),
-            ("client_secret", client_secret.as_str()),
+            ("client_id", config.client_id.as_str()),
+            ("client_secret", config.client_secret.as_str()),
             ("redirect_uri", redirect_uri.as_str()),
             ("grant_type", "authorization_code"),
             ("code", code.as_str()),
@@ -117,6 +134,16 @@ pub async fn authenticate() -> crate::Result<TokenResponse> {
         .json::<TokenResponse>()
         .await?;
     Ok(token_response)
+}
+
+pub async fn authenticate() -> crate::Result<TokenResponse> {
+    let config = OAuthConfig::from_env()?;
+    authenticate_with_handler(&config, |url| {
+        tracing::info!("Please open the following URL in your browser to authenticate:");
+        let _ = open::that(url);
+        Ok(())
+    })
+    .await
 }
 
 fn extract_code_and_state_from_request(request: &str) -> Option<(String, String)> {

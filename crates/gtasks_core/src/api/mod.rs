@@ -474,3 +474,50 @@ impl std::fmt::Display for TaskListId {
     }
 }
 
+#[allow(async_fn_in_trait)]
+pub trait TasksApi: Send + Sync {
+
+    async fn get_task_lists(&self) -> crate::Result<Vec<TaskList>>;
+    async fn create_task_list(&self, title: &str) -> crate::Result<TaskList>;
+    async fn delete_task_list(&self, list_id: &str) -> crate::Result<()>;
+    async fn get_tasks(
+        &self,
+        list_id: &str,
+        show_completed: bool,
+        updated_min: Option<&chrono::DateTime<chrono::Utc>>,
+    ) -> crate::Result<Vec<TaskGet>>;
+    async fn create_task(&self, list_id: &str, task: &TaskLocal) -> crate::Result<TaskGet>;
+    async fn patch_task(&self, list_id: &str, task_id: &str, patch: &TaskPatch) -> crate::Result<TaskGet>;
+    async fn delete_task(&self, list_id: &str, task_id: &str) -> crate::Result<()>;
+}
+
+impl TasksApi for GoogleTasksClient {
+    async fn get_task_lists(&self) -> crate::Result<Vec<TaskList>> {
+        self.get_task_lists().await
+    }
+    async fn create_task_list(&self, title: &str) -> crate::Result<TaskList> {
+        self.create_task_list(title).await
+    }
+    async fn delete_task_list(&self, list_id: &str) -> crate::Result<()> {
+        self.delete_task_list(list_id).await
+    }
+    async fn get_tasks(
+        &self,
+        list_id: &str,
+        show_completed: bool,
+        updated_min: Option<&chrono::DateTime<chrono::Utc>>,
+    ) -> crate::Result<Vec<TaskGet>> {
+        self.get_tasks(list_id, show_completed, updated_min).await
+    }
+    async fn create_task(&self, list_id: &str, task: &TaskLocal) -> crate::Result<TaskGet> {
+        self.create_task(list_id, task).await
+    }
+    async fn patch_task(&self, list_id: &str, task_id: &str, patch: &TaskPatch) -> crate::Result<TaskGet> {
+        self.patch_task(list_id, task_id, patch).await
+    }
+    async fn delete_task(&self, list_id: &str, task_id: &str) -> crate::Result<()> {
+        self.delete_task(list_id, task_id).await
+    }
+}
+
+
