@@ -182,7 +182,7 @@ Contributions are very welcome! If you find a bug or have a feature suggestion, 
 
 ## 🔒 Privacy Policy
 
-gTasks is a local-first application and prioritizes your data privacy. Google Tasks data and OAuth tokens are strictly stored locally on your device or in your OS Keyring and are never transmitted to any third-party servers. For details, see the complete [Privacy Policy](file:///home/alex_insc/project/gtasks-tui/PRIVACY_POLICY.md).
+gTasks is a local-first application and prioritizes your data privacy. Google Tasks data and OAuth tokens are strictly stored locally on your device or in your OS Keyring and are never transmitted to any third-party servers. For details, see the complete [Privacy Policy](file:///home/alex_insc/project/gtasks-tui/PRIVACY.md).
 
 ---
 
