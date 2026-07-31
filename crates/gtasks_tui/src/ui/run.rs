@@ -29,7 +29,6 @@ pub enum BackgroundAction {
     SaveTask(gtasks_core::api::TaskLocal),
     DeleteTask(String),
     SaveTaskList(TaskList),
-    CreateTaskList(String),
 }
 
 /// Main TUI Terminal Controller & Event Loop
@@ -93,18 +92,6 @@ pub async fn run(
                     let _ = sync_local_to_db(&mut bg_client, &mut bg_db).await;
                     let _ = sync_remote_to_db(&mut bg_client, &mut bg_db).await;
                     let _ = result_tx.send(format!("Saved Task List '{}' ✅", list.title));
-                }
-                BackgroundAction::CreateTaskList(title) => {
-                    match bg_client.create_task_list(&title).await {
-                        Ok(created_list) => {
-                            let _ = bg_db.save_task_lists(std::slice::from_ref(&created_list));
-                            let _ = sync_remote_to_db(&mut bg_client, &mut bg_db).await;
-                            let _ = result_tx.send(format!("Created Task List '{}' ✅", title));
-                        }
-                        Err(err) => {
-                            let _ = result_tx.send(format!("Error creating task list: {}", err));
-                        }
-                    }
                 }
             }
         }
@@ -223,7 +210,6 @@ pub async fn run(
                                         app.tasks.clear();
                                         app.status_message =
                                             format!("Creating Task List '{}'...", list_name);
-                                        let _ = action_tx.send(BackgroundAction::CreateTaskList(list_name));
                                     }
                                     app.title_buffer.clear();
                                     app.input_mode = InputMode::Normal;
