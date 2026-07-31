@@ -1,4 +1,7 @@
+# gtasks-tui
+
 ---
+
 layout: default
 title: Privacy Policy
 ---
@@ -16,6 +19,7 @@ This Privacy Policy applies to the **gtasks-tui** application, developed and mai
 gTasks is a **local-first desktop and terminal application** designed to manage your Google Tasks. To provide its core features, gTasks requests access to your Google Account data via the official Google Tasks REST API (`https://www.googleapis.com/auth/tasks`).
 
 Specifically, gTasks accesses:
+
 * **Google Tasks Data:** Task list titles, task titles, task descriptions/notes, completion statuses, due dates, subtask hierarchies, and modification timestamps.
 * **OAuth Authentication Tokens:** Access and refresh tokens issued by Google to authenticate your session.
 
@@ -26,11 +30,13 @@ We **do not** collect or access your name, email address, password, contacts, Go
 ## 2. How We Use Your Data
 
 All data accessed through the Google Tasks API is used **strictly to provide and improve user-facing features within the application**. Specifically, gTasks uses your data to:
+
 * Display your task lists and tasks in the desktop (GTK4/Libadwaita) and terminal (Ratatui) interfaces.
 * Create, edit, complete, reorder, or delete tasks on your behalf based on your direct in-app actions.
 * Synchronize local offline changes (stored in SQLite) with your remote Google Tasks account.
 
 ### 🚫 Prohibited Uses & Explicit Disclaimers
+
 * **No Selling:** We do not sell, rent, or trade your Google user data to any third party under any circumstances.
 * **No Advertising:** Your data is never used for advertising, marketing, or behavioral tracking purposes.
 * **No AI/ML Training:** Google Workspace user data accessed by gTasks is **never** used to develop, improve, or train generalized or non-personalized Artificial Intelligence (AI) or Machine Learning (ML) models.
@@ -61,6 +67,7 @@ Because gTasks operates locally on your computer, you have total control over yo
 ## 5. Third-Party Services
 
 gTasks interacts directly with **Google LLC** services. Your use of gTasks is subject to Google's own policies regarding task data:
+
 * [Google Privacy Policy](https://policies.google.com/privacy)
 * [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy)
 
