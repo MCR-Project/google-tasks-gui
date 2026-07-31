@@ -1,6 +1,6 @@
 ---
 layout: default
-title: Privacy Policy - gtasks
+title: gtasks - Privacy Policy
 permalink: /PRIVACY.html
 ---
 
@@ -85,4 +85,3 @@ If you have any questions or concerns regarding this Privacy Policy or gtasks's 
 * **Developer / Organization:** MCR-Project
 * **GitHub Repository:** [https://github.com/MCR-Project/google-tasks-gui](https://github.com/MCR-Project/google-tasks-gui)
 * **Contact Email:** `alexis.insalaco@gmail.com`
-

@@ -8,7 +8,7 @@ use std::error::Error;
 fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     dotenvy::dotenv().ok();
 
-    tracing::info!("🚀 Starting gtasks-tui Terminal TUI...");
+    tracing::info!("🚀 Starting gtasks Terminal TUI...");
 
     let rt = tokio::runtime::Runtime::new()?;
 
@@ -33,6 +33,6 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     // Step 4: Run TUI Interface
     rt.block_on(async { ui::run(&mut client, &mut db).await })?;
 
-    tracing::info!("✨ Thank you for using gtasks-tui!");
+    tracing::info!("✨ Thank you for using gtasks!");
     Ok(())
 }

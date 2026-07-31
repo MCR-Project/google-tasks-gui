@@ -70,7 +70,7 @@ impl SimpleComponent for AppModel {
 
     view! {
         adw::ApplicationWindow {
-            set_title: Some("Google Tasks"),
+            set_title: Some("gtasks"),
             set_default_size: (1100, 650),
             connect_is_active_notify[sync_manager = model.sync_manager.clone()] => move |win| {
                 sync_manager.set_window_active(win.is_active());

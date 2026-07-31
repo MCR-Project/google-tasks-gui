@@ -6,7 +6,7 @@ use relm4::RelmApp;
 
 fn main() {
     dotenvy::dotenv().ok();
-    let app = RelmApp::new("com.example.gtasks");
+    let app = RelmApp::new("io.github.MCR_Project.gtasks");
     relm4::set_global_css(
         "
         .task-completed {

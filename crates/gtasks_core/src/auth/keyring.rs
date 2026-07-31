@@ -1,6 +1,6 @@
 use keyring::Entry;
 
-const SERVICE_NAME: &str = "gtasks-tui";
+const SERVICE_NAME: &str = "gtasks";
 const REFRESH_TOKEN_KEY: &str = "refresh_token";
 
 // Save the refresh token in the linux system keyring

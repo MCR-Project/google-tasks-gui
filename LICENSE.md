@@ -1,6 +1,6 @@
 ---
 layout: default
-title: MIT License
+title: gtasks - Terms of Service
 permalink: /LICENSE.html
 ---
 
