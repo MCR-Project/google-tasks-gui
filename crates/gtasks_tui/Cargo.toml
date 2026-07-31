@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 description = "Google Tasks TUI client for Linux"
+readme = "../../README.md"
 
 [dependencies]
 gtasks_core = { version = "0.1.0", path = "../gtasks_core" }
