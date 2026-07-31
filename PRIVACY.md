@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Privacy Policy - gtasks-tui
-permalink: /PRIVACY.md
+permalink: /PRIVACY.html
 ---
 
 # Privacy Policy for gtasks-tui
