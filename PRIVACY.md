@@ -1,3 +1,8 @@
+---
+layout: default
+title: Privacy Policy
+---
+
 # Privacy Policy for gtasks-tui
 
 **Last Updated:** July 31, 2026

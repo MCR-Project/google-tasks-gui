@@ -1,4 +1,4 @@
-# 🚀 gtasks-tui
+# gtasks-tui
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Language: Rust](https://img.shields.io/badge/Language-Rust-orange.svg)](https://www.rust-lang.org/)
@@ -52,6 +52,7 @@ Whether you prefer a keyboard-driven Terminal User Interface (TUI) or a sleek GT
 ```
 
 The repository is structured as a Rust Cargo Workspace:
+
 - [`crates/gtasks_core`](file:///home/alex_insc/project/gtasks-tui/crates/gtasks_core) - Core business logic, OAuth 2.0 PKCE flow, SQLite database persistence, background sync worker, and natural language date parser.
 - [`crates/gtasks_tui`](file:///home/alex_insc/project/gtasks-tui/crates/gtasks_tui) - Terminal dashboard application powered by Ratatui & Crossterm.
 - [`crates/gtasks_gui`](file:///home/alex_insc/project/gtasks-tui/crates/gtasks_gui) - Native Linux desktop GUI built with Relm4 (GTK4 / Libadwaita).
