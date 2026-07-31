@@ -1,4 +1,4 @@
-# gtasks-tui
+# gtasks
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Language: Rust](https://img.shields.io/badge/Language-Rust-orange.svg)](https://www.rust-lang.org/)
@@ -7,35 +7,39 @@
 
 > A modern, fast, offline-first **Google Tasks** desktop client & terminal dashboard for Linux built with **Rust**.
 
-## 🎯 Purpose & Functionality
+## 🎯 Purpose & Application Features
 
-**gtasks-tui** is an open-source productivity application designed to provide Linux users with a fast, native desktop client and terminal dashboard for managing their **Google Tasks**.
+**gtasks** is an open-source productivity application designed to provide Linux users with a fast, native desktop client (GTK4/Libadwaita) and terminal dashboard (Ratatui) for managing their **Google Tasks**.
 
-### Key Application Purpose
+### Key Application Features
 
-- **Task Management:** Allows users to view, create, edit, reorder, mark complete, and organize task lists and subtasks in their Google Account directly from Linux.
-- **Google Tasks API Usage:** `gtasks-tui` requests access to the official Google Tasks API (`https://www.googleapis.com/auth/tasks`) exclusively to display your tasks, synchronize task modifications made in the app, and allow seamless offline and online task management.
-- **Offline Support & Synchronization:** Tasks are stored in a local SQLite cache so you can manage your to-do lists without an active internet connection. Any changes made offline automatically synchronize with your Google Tasks account when online.
+- 🖥️ **Dual Interface:** Keyboard-driven Terminal User Interface (TUI) and GTK4 Desktop GUI.
+- 📴 **Offline-First Management:** Local SQLite cache allowing offline reading, creation, and editing of tasks.
+- 🗓️ **Natural Language Recognition:** Smart date parsing (e.g., `"Buy milk tomorrow"`).
+- 🌲 **Hierarchical Organization:** Nested tasks and subtask management.
+- 🔄 **Automatic Synchronization:** Seamless background delta syncing with Google Tasks.
 
 ---
 
-## 📌 Overview & Highlights
+## 🔒 Google User Data Access & Usage
 
-**gtasks-tui** is a high-performance native desktop client for Google Tasks on Linux. It bridges the gap between terminal productivity and desktop UI by providing a fast, offline-first experience with seamless background synchronization.
+`gtasks` requests access to your Google Account data via the official **Google Tasks API** (`https://www.googleapis.com/auth/tasks`). Here is how we handle and protect your data:
 
-Whether you prefer a keyboard-driven Terminal User Interface (TUI) or a sleek GTK4 desktop app, **gtasks-tui** keeps your task lists in sync while storing your credentials safely in your OS keyring.
+### 1. Why We Request Access to Google User Data
+To function as a Google Tasks client on Linux, `gtasks` requires access to read, create, modify, and delete tasks and task lists in your Google account based strictly on your direct actions within the app.
 
-### ✨ Key Features
+### 2. How We Use Google User Data
+- **Displaying Tasks:** To show your task lists, task titles, descriptions, due dates, and completion status inside the application.
+- **Task Management:** To create, edit, reorder, mark complete, or delete tasks on your Google account when requested by you.
+- **Background Synchronization:** To sync changes made offline in the local SQLite database back to your Google Tasks account once online.
 
-- ⚡ **Instant Startup & Minimal Footprint:** Written in native Rust with low memory overhead.
-- 📴 **Offline-First Storage:** Integrated local SQLite cache so you can read, create, edit, and complete tasks without an active internet connection.
-- 🔐 **Secure Keyring Authentication:** Local loopback OAuth 2.0 PKCE flow that stores tokens safely in the Linux System Keyring (`Secret Service` API / KWallet).
-- 🖥️ **Dual Interface:**
-  - **TUI:** Terminal User Interface built with [Ratatui](https://github.com/ratatui/ratatui) & [Crossterm](https://github.com/crossterm-rs/crossterm).
-  - **GUI:** Desktop interface built with GTK4 / Libadwaita via [Relm4](https://relm4.org/).
-- 🗓️ **Natural Language Date Parsing:** Smart date recognition (e.g. `"Buy milk today"`, `"Submit report tomorrow"`, `"Team sync next monday"`).
-- 🌲 **Hierarchical Subtask Ordering:** Supports nested tasks and subtask parent-child relationships.
-- 🔄 **Bidirectional Background Sync:** Automatic delta syncing, conflict resolution, offline change queuing, and silent OAuth token refreshes.
+### 3. Data Protection & Privacy Guarantees
+- **Local-First & No Third-Party Servers:** `gtasks` does not transmit your tasks, account data, or authentication tokens to any external servers managed by MCR-Project or third parties. All API communication occurs directly between your local device and Google's official servers (`googleapis.com`).
+- **Secure Local Credential Storage:** OAuth 2.0 tokens are encrypted and stored using your operating system's native secret storage (e.g., Linux Secret Service / KWallet via `keyring`).
+- **No Selling or Advertising:** Your Google user data is **never** sold, rented, shared, or used for advertising or marketing.
+- **No AI/ML Model Training:** Google Workspace user data accessed by `gtasks` is **never** used to train, develop, or improve AI or Machine Learning models.
+
+For full details, please review our complete [Privacy Policy](./PRIVACY.html).
 
 ---
 
@@ -71,7 +75,7 @@ The repository is structured as a Rust Cargo Workspace:
 
 ## 🛠️ Prerequisites & System Requirements
 
-To build **gtasks-tui** on Linux, ensure you have the Rust toolchain installed alongside native development headers:
+To build **gtasks** on Linux, ensure you have the Rust toolchain installed alongside native development headers:
 
 ### 1. Install System Dependencies
 
@@ -193,7 +197,7 @@ Contributions are very welcome! If you find a bug or have a feature suggestion, 
 
 ## 🔒 Privacy Policy
 
-gtasks-tui is a local-first application and prioritizes your data privacy. Google Tasks data and OAuth tokens are strictly stored locally on your device or in your OS Keyring and are never transmitted to any third-party servers. For details, see the complete [Privacy Policy](./PRIVACY.html).
+gtasks is a local-first application and prioritizes your data privacy. Google Tasks data and OAuth tokens are strictly stored locally on your device or in your OS Keyring and are never transmitted to any third-party servers. For details, see the complete [Privacy Policy](./PRIVACY.html).
 
 ---
 
