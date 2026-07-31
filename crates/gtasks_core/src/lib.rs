@@ -1,3 +1,55 @@
+//! # gtasks_core
+//!
+//! `gtasks_core` is an offline-first, thread-safe Rust SDK for the **Google Tasks API**.
+//!
+//! It serves as the core synchronization engine and API client for task management applications,
+//! featuring OAuth 2.0 PKCE authentication, secure OS keyring integration, local SQLite caching,
+//! background delta synchronization, and natural language date parsing.
+//!
+//! ## Architectural Overview
+//!
+//! The crate is divided into five specialized modules:
+//!
+//! - [`api`]: Asynchronous Google Tasks REST API client with automatic token retries and pagination.
+//! - [`auth`]: OAuth 2.0 Authorization Code Flow with PKCE and OS Keyring persistence (`keyring`).
+//! - [`db`]: Embedded, thread-safe SQLite database manager (`rusqlite`) for offline task caching.
+//! - [`sync`]: Background actor ([`SyncManager`]) driving periodic and window-focus synchronization.
+//! - [`util`]: Helpers for natural language date parsing ([`parse_nlp_task`]) and tree hierarchies ([`order_tasks_hierarchically`]).
+//!
+//! ## Usage Example
+//!
+//! ```rust,no_run
+//! use gtasks_core::{obtain_authenticated_client, Database, sync_remote_to_db};
+//! use std::error::Error;
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+//!     // 1. Authenticate (Keyring lookup with PKCE fallback)
+//!     let mut client = obtain_authenticated_client().await?;
+//!
+//!     // 2. Open local SQLite cache
+//!     let mut db = Database::new("tasks.db")?;
+//!
+//!     // 3. Bidirectionally sync changes between SQLite and Google Tasks API
+//!     sync_remote_to_db(&mut client, &mut db).await?;
+//!
+//!     // 4. Query offline tasks
+//!     let lists = db.get_task_lists()?;
+//!     for list in lists {
+//!         println!("Task List: {} (ID: {})", list.title, list.id);
+//!     }
+//!
+//!     Ok(())
+//! }
+//! ```
+//!
+//! ## System Prerequisites
+//!
+//! On Linux targets, system secret service development headers are required for `keyring` compilation:
+//! - Debian/Ubuntu: `libsecret-1-dev`, `libssl-dev`, `pkg-config`
+//! - Fedora: `libsecret-devel`, `openssl-devel`
+//! - Arch Linux: `libsecret`, `openssl`
+
 pub mod api;
 pub mod auth;
 pub mod db;
@@ -7,15 +59,13 @@ pub mod util;
 
 pub use api::{GoogleTasksClient, TaskList, TaskLocal};
 pub use db::Database;
-pub use error::GTasksError;
+pub use error::{GTasksError, Result};
 pub use sync::{SyncCommand, SyncEvent, SyncManager};
 pub use util::{order_tasks_hierarchically, parse_nlp_task};
 use futures::future::join_all;
-use std::error::Error;
 
 /// Resolves authentication by checking Keyring first, falling back to OAuth PKCE.
-pub async fn obtain_authenticated_client() -> Result<GoogleTasksClient, Box<dyn Error + Send + Sync>>
-{
+pub async fn obtain_authenticated_client() -> crate::error::Result<GoogleTasksClient> {
     let token_response = if let Ok(refresh_token) = auth::keyring::get_refresh_token() {
         tracing::info!("🔐 Found saved refresh token in OS keyring. Refreshing access token...");
         auth::refresh_access_token(&refresh_token).await?
@@ -42,7 +92,7 @@ pub async fn sync_remote_to_db_delta(
     client: &mut GoogleTasksClient,
     db: &mut Database,
     last_sync: Option<chrono::DateTime<chrono::Utc>>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+) -> crate::error::Result<()> {
     let lists = client.get_task_lists().await?;
     let db_clone = db.clone();
     let lists_clone = lists.clone();
@@ -55,7 +105,7 @@ pub async fn sync_remote_to_db_delta(
             let raw_tasks = client_clone
                 .get_tasks(&list_id, true, last_sync.as_ref())
                 .await?;
-            Ok::<(String, Vec<api::TaskGet>), Box<dyn Error + Send + Sync>>((list_id, raw_tasks))
+            Ok::<(String, Vec<api::TaskGet>), crate::error::GTasksError>((list_id, raw_tasks))
         }
     });
 
@@ -88,14 +138,15 @@ pub async fn sync_remote_to_db_delta(
 pub async fn sync_remote_to_db(
     client: &mut GoogleTasksClient,
     db: &mut Database,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+) -> crate::error::Result<()> {
     sync_remote_to_db_delta(client, db, None).await
 }
 
 pub async fn sync_local_to_db(
     client: &mut GoogleTasksClient,
     db: &mut Database,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+) -> crate::error::Result<()> {
+
     // 0. Sync pending local task lists created offline/locally
     let db_clone = db.clone();
     if let Ok(dirty_lists) = tokio::task::spawn_blocking(move || db_clone.get_dirty_task_lists()).await? {

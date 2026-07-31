@@ -24,17 +24,16 @@ pub struct PkceChallenge {
     pub state: String,
 }
 
-fn resolve_client_credentials(
-) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
+fn resolve_client_credentials() -> crate::Result<(String, String)> {
     let client_id = match option_env!("GOOGLE_CLIENT_ID") {
         Some(val) if !val.is_empty() => val.to_string(),
         _ => env::var("GOOGLE_CLIENT_ID")
-            .map_err(|_| "GOOGLE_CLIENT_ID must be set at compile-time or in environment")?,
+            .map_err(|_| crate::GTasksError::Auth("GOOGLE_CLIENT_ID must be set at compile-time or in environment".to_string()))?,
     };
     let client_secret = match option_env!("GOOGLE_CLIENT_SECRET") {
         Some(val) if !val.is_empty() => val.to_string(),
         _ => env::var("GOOGLE_CLIENT_SECRET")
-            .map_err(|_| "GOOGLE_CLIENT_SECRET must be set at compile-time or in environment")?,
+            .map_err(|_| crate::GTasksError::Auth("GOOGLE_CLIENT_SECRET must be set at compile-time or in environment".to_string()))?,
     };
     Ok((client_id, client_secret))
 }
@@ -59,7 +58,7 @@ pub fn generate_pkce() -> PkceChallenge {
     }
 }
 
-pub async fn authenticate() -> Result<TokenResponse, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn authenticate() -> crate::Result<TokenResponse> {
     let (client_id, client_secret) = resolve_client_credentials()?;
 
     // Start a simple HTTP server to listen for the OAuth callback
@@ -147,7 +146,7 @@ fn extract_code_and_state_from_request(request: &str) -> Option<(String, String)
 
 pub async fn refresh_access_token(
     refresh_token: &str,
-) -> Result<TokenResponse, Box<dyn std::error::Error + Send + Sync>> {
+) -> crate::Result<TokenResponse> {
     let (client_id, client_secret) = resolve_client_credentials()?;
 
     let client = reqwest::Client::new();

@@ -61,7 +61,7 @@ async fn run_sync_actor(
                 match cmd {
                     Some(SyncCommand::TriggerImmediateSync) => {
                         let _ = event_tx.send(SyncEvent::SyncStarted { is_manual: true }).await;
-                        let res = perform_single_sync(&mut last_sync_time).await;
+                        let res = perform_single_sync(&mut last_sync_time).await.map_err(|e| e.to_string());
                         let _ = event_tx.send(SyncEvent::SyncFinished(res)).await;
                         timer.reset();
                     }
@@ -75,7 +75,7 @@ async fn run_sync_actor(
                         if became_active {
                             tracing::info!("🪟 Window focused! Triggering immediate background delta sync...");
                             let _ = event_tx.send(SyncEvent::SyncStarted { is_manual: false }).await;
-                            let res = perform_single_sync(&mut last_sync_time).await;
+                            let res = perform_single_sync(&mut last_sync_time).await.map_err(|e| e.to_string());
                             let _ = event_tx.send(SyncEvent::SyncFinished(res)).await;
                         }
                     }
@@ -84,7 +84,7 @@ async fn run_sync_actor(
             }
             _ = timer.tick() => {
                 let _ = event_tx.send(SyncEvent::SyncStarted { is_manual: false }).await;
-                let res = perform_single_sync(&mut last_sync_time).await;
+                let res = perform_single_sync(&mut last_sync_time).await.map_err(|e| e.to_string());
                 let _ = event_tx.send(SyncEvent::SyncFinished(res)).await;
             }
         }
@@ -93,23 +93,13 @@ async fn run_sync_actor(
 
 async fn perform_single_sync(
     last_sync_time: &mut Option<DateTime<Utc>>,
-) -> Result<DateTime<Utc>, String> {
+) -> crate::Result<DateTime<Utc>> {
     let sync_start = Utc::now();
-    let mut client = obtain_authenticated_client()
-        .await
-        .map_err(|e| e.to_string())?;
-    let mut db = tokio::task::spawn_blocking(|| Database::new("task_lists.db"))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())?;
+    let mut client = obtain_authenticated_client().await?;
+    let mut db = tokio::task::spawn_blocking(|| Database::new("task_lists.db")).await??;
 
-    sync_local_to_db(&mut client, &mut db)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    sync_remote_to_db_delta(&mut client, &mut db, *last_sync_time)
-        .await
-        .map_err(|e| e.to_string())?;
+    sync_local_to_db(&mut client, &mut db).await?;
+    sync_remote_to_db_delta(&mut client, &mut db, *last_sync_time).await?;
 
     *last_sync_time = Some(sync_start);
     Ok(sync_start)
