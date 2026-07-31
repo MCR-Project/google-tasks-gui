@@ -28,7 +28,7 @@ Add `gtasks_core` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-gtasks_core = "0.1.1"
+gtasks_core = "0.1.2"
 tokio = { version = "1.0", features = ["full"] }
 chrono = { version = "0.4", features = ["serde"] }
 ```

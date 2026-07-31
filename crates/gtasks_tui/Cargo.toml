@@ -9,7 +9,7 @@ repository = "https://github.com/MCR-Project/google-tasks-gui"
 
 
 [dependencies]
-gtasks_core = { version = "0.1.1", path = "../gtasks_core" }
+gtasks_core = { version = "0.1.2", path = "../gtasks_core" }
 tokio = { version = "1.53.1", features = ["full"] }
 dotenvy = "0.15"
 ratatui = "0.30.2"
