@@ -1,8 +1,8 @@
-# Privacy Policy for gTasks (`google-tasks-gui`)
+# Privacy Policy for gtasks-gui
 
 **Last Updated:** July 31, 2026
 
-This Privacy Policy applies to the **gTasks** application (`google-tasks-gui`), developed and maintained by **MCR-Project** ("we", "us", or "our"). This document outlines how gTasks accesses, uses, stores, and protects your information when you use our application.
+This Privacy Policy applies to the **gtasks-gui** application, developed and maintained by **MCR-Project** ("we", "us", or "our"). This document outlines how gtasks-gui accesses, uses, stores, and protects your information when you use our application.
 
 ---
 
