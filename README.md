@@ -70,6 +70,7 @@ The repository is structured as a Rust Cargo Workspace:
 - [`crates/gtasks_core`](file:///home/alex_insc/project/gtasks-tui/crates/gtasks_core) - Core business logic, OAuth 2.0 PKCE flow, SQLite database persistence, background sync worker, and natural language date parser.
 - [`crates/gtasks_tui`](file:///home/alex_insc/project/gtasks-tui/crates/gtasks_tui) - Terminal dashboard application powered by Ratatui & Crossterm.
 - [`crates/gtasks_gui`](file:///home/alex_insc/project/gtasks-tui/crates/gtasks_gui) - Native Linux desktop GUI built with Relm4 (GTK4 / Libadwaita).
+- [`crates/tasks_widget`](./crates/tasks_widget) - Windows desktop widget built with egui and eframe with desktop pinning support.
 
 ---
 
@@ -116,6 +117,9 @@ cargo run -p gtasks_tui
 
 # Run the Desktop GUI (GTK4 / Relm4)
 cargo run -p gtasks_gui
+
+# Run the Windows Desktop Widget (egui / eframe)
+cargo run -p tasks-rust
 ```
 
 ### Running Tests
